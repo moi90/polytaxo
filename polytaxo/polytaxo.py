@@ -26,10 +26,14 @@ from typing import (
 
 
 class NodeNotFoundError(Exception):
+    """Exception raised when a node is not found."""
+
     pass
 
 
 class ConflictError(Exception):
+    """Exception raised when descriptors are incompatible."""
+
     pass
 
 
@@ -38,9 +42,12 @@ TOnConflictLiteral = Literal["replace", "raise", "skip"]
 
 
 class Descriptor(abc.ABC):
+    """Abstract base class for descriptors."""
+
     @property
     @abc.abstractmethod
     def unique_id(self):  # pragma: no cover
+        """Return a unique identifier for the descriptor."""
         ...
 
     def __hash__(self) -> int:
@@ -51,10 +58,13 @@ class Descriptor(abc.ABC):
 
     @abc.abstractmethod
     def negate(self, negate: bool = True) -> "Descriptor":  # pragma: no cover
+        """Negate the descriptor."""
         ...
 
     @abc.abstractmethod
-    def format(self, anchor: Optional["PrimaryNode"] = None) -> str: ...
+    def format(self, anchor: Optional["PrimaryNode"] = None) -> str:
+        """Format the descriptor as a string."""
+        ...
 
     def __str__(self) -> str:
         return self.format()
@@ -100,6 +110,8 @@ class NeverDescriptor(Descriptor):
 
 
 class PolyDescription:
+    """Represents a polyhierarchical description."""
+
     def __init__(
         self, anchor: "PrimaryNode", qualifiers: Optional[Iterable[Descriptor]] = None
     ) -> None:
@@ -112,6 +124,7 @@ class PolyDescription:
 
     @property
     def descriptors(self) -> Sequence[Descriptor]:
+        """Return all descriptors including the anchor and qualifiers."""
         return [self.anchor] + self.qualifiers
 
     def __eq__(self, other: object) -> bool:
@@ -146,6 +159,7 @@ class PolyDescription:
         return f"<{self.__class__.__name__} {self!s}>"
 
     def to_binary_raw(self) -> Mapping["_BaseRealNode", bool]:
+        """Convert the description to a binary representation with nodes and their active state."""
         map: Mapping[_BaseRealNode, bool] = {}
 
         def handle_positive(node: _BaseRealNode):
@@ -187,6 +201,7 @@ class PolyDescription:
         return map
 
     def to_binary_str(self) -> Mapping[str, bool]:
+        """Convert the binary representation to a string representation."""
         return {str(k): v for k, v in self.to_binary_raw().items()}
 
     def to_multilabel(self, n_labels=None, fill_na: Any = -1) -> List:
@@ -201,6 +216,7 @@ class PolyDescription:
         return [int_map.get(i, fill_na) for i in range(n_labels)]
 
     def copy(self) -> "PolyDescription":
+        """Create a copy of the current PolyDescription."""
         return PolyDescription(self.anchor, self.qualifiers)
 
     def _add_poly_description(
@@ -318,6 +334,7 @@ class PolyDescription:
         other: Union["PolyDescription", Descriptor],
         on_conflict: TOnConflictLiteral = "replace",
     ) -> "PolyDescription":
+        """Add a descriptor or poly description to the current description."""
         if on_conflict not in ("replace", "raise", "skip"):
             raise ValueError(f"Unexpected value for on_conflict: {on_conflict}")
 
@@ -354,7 +371,7 @@ class PolyDescription:
         if other <= self.anchor:
             # Delete the precluded portion of the anchor
             if other.parent is None:
-                raise ValueError("Can not remote root")
+                raise ValueError("Cannot remove root")
 
             self.anchor = other.parent
 
@@ -381,6 +398,7 @@ class PolyDescription:
         self.qualifiers = new_qualifiers
 
     def remove(self, other: Union["PolyDescription", Descriptor]):
+        """Remove a descriptor or poly description from the current description."""
         if isinstance(other, PolyDescription):
             self._remove_poly_description(other)
 
@@ -397,6 +415,8 @@ class PolyDescription:
 
 
 class _BaseNode:
+    """Base class for all nodes."""
+
     def __init__(
         self,
         name: str,
@@ -406,11 +426,14 @@ class _BaseNode:
         self.parent = parent
 
     def set_parent(self, parent: Optional["_BaseNode"]):
+        """Set the parent node."""
         self.parent = parent
         return self
 
     @functools.cached_property
     def precursors(self) -> Tuple["_BaseNode", ...]:
+        """Return a tuple of all precursor nodes up to the root."""
+
         def _(node):
             while node is not None:
                 yield node
@@ -420,6 +443,7 @@ class _BaseNode:
 
     @property
     def siblings(self):
+        """Return a tuple of sibling nodes."""
         if self.parent is None:
             return tuple()
 
@@ -430,9 +454,11 @@ class _BaseNode:
 
     @functools.cached_property
     def path(self):
+        """Return the path from the root to this node as a tuple of names."""
         return tuple(n.name for n in self.precursors)
 
     def format(self, anchor: Union["PrimaryNode", None] = None) -> str:
+        """Format the node as a string relative to an optional anchor."""
         precursors = self.precursors
 
         if anchor is not None:
@@ -464,17 +490,21 @@ class _BaseNode:
 
 
 class IndexProvider:
+    """Class for providing unique indices for nodes."""
+
     def __init__(self) -> None:
         self.counter = itertools.count()
         self.taken: Set[int] = set()
 
     def remove(self, index):
+        """Remove a specific index from the available pool."""
         if index in self.taken:
             raise ValueError(f"Index {index} is already taken")
 
         self.taken.add(index)
 
     def take(self):
+        """Take the next available index."""
         while True:
             index = next(self.counter)
             if index not in self.taken:
@@ -486,10 +516,13 @@ class IndexProvider:
 
     @property
     def n_labels(self):
+        """Return the number of unique labels."""
         return max(self.taken) + 1
 
 
 class _BaseRealNode(_BaseNode, Descriptor):
+    """Base class for real nodes (nodes that have a real presence in the hierarchy)."""
+
     def __init__(
         self,
         name: str,
@@ -500,6 +533,7 @@ class _BaseRealNode(_BaseNode, Descriptor):
         self.index = index
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert the node to a dictionary representation."""
         d: Dict[str, Any] = {}
         if self.index is not None:
             d["index"] = self.index
@@ -513,10 +547,11 @@ class _BaseRealNode(_BaseNode, Descriptor):
         raise NotImplementedError()
 
     def _include_in_binary(self):
-        # A node should be included in the binary output if it is a proper inner node (not a (pseudo-)root) or a leaf
+        """Determine if the node should be included in the binary output."""
         return (type(self.parent) == type(self)) or not self._get_all_children()
 
     def fill_indices(self, index_provider: IndexProvider):
+        """Fill the indices for the node and its children."""
         if self.index is None and self._include_in_binary():
             self.index = index_provider.take()
         for child in self._get_all_children():
@@ -524,6 +559,7 @@ class _BaseRealNode(_BaseNode, Descriptor):
                 child.fill_indices(index_provider)
 
     def walk(self) -> Iterator["_BaseRealNode"]:
+        """Walk through the node and its children."""
         yield self
         for child in self._get_all_children():
             if isinstance(child, _BaseRealNode):
@@ -539,14 +575,17 @@ TRealNode = TypeVar("TRealNode", bound=_BaseRealNode)
 
 
 class NegatedRealNode(Descriptor, Generic[TRealNode]):
+    """Represents a negated real node."""
+
     def __init__(self, node: TRealNode) -> None:
-        # We can not negate the root
+        # We cannot negate the root
         if node.parent is None:
-            raise ValueError(f"Root node can not be negated")
+            raise ValueError(f"Root node cannot be negated")
 
         self.node = node
 
     def format(self, anchor: Union["PrimaryNode", None] = None) -> str:
+        """Format the negated node as a string."""
         return f"!{self.node.format(anchor)}"
 
     @property
@@ -594,6 +633,8 @@ class NegatedRealNode(Descriptor, Generic[TRealNode]):
 
 
 class TagNode(_BaseRealNode):
+    """Represents a tag node."""
+
     def __init__(
         self,
         name: str,
@@ -608,6 +649,7 @@ class TagNode(_BaseRealNode):
     def from_dict(
         name, data: Optional[Mapping], parent: Union["PrimaryNode", "TagNode"]
     ) -> "TagNode":
+        """Create a TagNode from a dictionary representation."""
         if data is None:
             data = {}
 
@@ -619,6 +661,7 @@ class TagNode(_BaseRealNode):
         return tag_node
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert the TagNode to a dictionary representation."""
         d = super().to_dict()
         if self.children:
             d["children"] = {c.name: c.to_dict() for c in self.children}
@@ -626,6 +669,7 @@ class TagNode(_BaseRealNode):
         return d
 
     def add_child(self, node: "TagNode"):
+        """Add a child TagNode."""
         self.children.append(node)
 
     def _get_all_children(self):
@@ -633,6 +677,7 @@ class TagNode(_BaseRealNode):
 
     @functools.cached_property
     def primary_parent(self) -> Optional["PrimaryNode"]:
+        """Return the primary parent (first parent that is a PrimaryNode) of the TagNode."""
         parent = self.parent
         while parent is not None:
             if isinstance(parent, PrimaryNode):
@@ -653,6 +698,7 @@ class TagNode(_BaseRealNode):
         raise NodeNotFoundError(name)
 
     def find_tag(self, name_or_path: Union[str, Iterable[str]]) -> "TagNode":
+        """Find a tag by name or path."""
         if isinstance(name_or_path, str):
             name_or_path = (name_or_path,)
 
@@ -664,6 +710,7 @@ class TagNode(_BaseRealNode):
         return node
 
     def format_tree(self, extra_info=None) -> str:
+        """Format the TagNode and its children as a tree."""
         name = self.name
 
         extra = []
@@ -677,6 +724,7 @@ class TagNode(_BaseRealNode):
             name += f" [{extra_info[self.index]}]"
 
         lines = [f"{name}:"]
+
         for child in self.children:
             lines.append(indent(child.format_tree(extra_info), "  "))
 
@@ -709,6 +757,7 @@ class TagNode(_BaseRealNode):
 
 
 def _tokenize_expression_str(query_str: str):
+    """Tokenize a string expression."""
     # Split into parts, then at : and / and separate off !
     return [
         tuple(filter(None, (re.split("/|:|(!)|(-)", part))))
@@ -717,6 +766,8 @@ def _tokenize_expression_str(query_str: str):
 
 
 class VirtualNode(_BaseNode):
+    """Represents a virtual node."""
+
     def __init__(
         self,
         name: str,
@@ -728,6 +779,7 @@ class VirtualNode(_BaseNode):
         self.description = description
 
     def format_tree(self) -> str:
+        """Format the virtual node as a tree."""
         return f"{self.name} -> {self.description!s}"
 
     def __repr__(self):
@@ -735,6 +787,8 @@ class VirtualNode(_BaseNode):
 
 
 class PrimaryNode(_BaseRealNode):
+    """Represents a primary node."""
+
     parent: Optional["PrimaryNode"]
 
     def __init__(
@@ -759,6 +813,7 @@ class PrimaryNode(_BaseRealNode):
     def from_dict(
         name, data: Optional[Mapping], parent: Optional["PrimaryNode"]
     ) -> "PrimaryNode":
+        """Create a PrimaryNode from a dictionary representation."""
         if data is None:
             data = {}
 
@@ -790,6 +845,7 @@ class PrimaryNode(_BaseRealNode):
         return node
 
     def to_dict(self):
+        """Convert the PrimaryNode to a dictionary representation."""
         d = super().to_dict()
         if self.alias:
             if isinstance(self.alias, str) or len(self.alias) > 1:
@@ -811,18 +867,22 @@ class PrimaryNode(_BaseRealNode):
         return self.children + self.tags + self.virtuals
 
     def add_child(self, node: "PrimaryNode"):
+        """Add a child PrimaryNode."""
         self.children.append(node)
         return node
 
     def add_tag(self, node: TagNode):
+        """Add a TagNode."""
         self.tags.append(node)
         return node
 
     def add_virtual(self, node: VirtualNode):
+        """Add a VirtualNode."""
         self.virtuals.append(node)
         return node
 
     def _matches_name(self, name: str, with_alias: bool):
+        """Check if the node matches the given name or alias."""
         if name == self.name:
             return True
 
@@ -834,6 +894,7 @@ class PrimaryNode(_BaseRealNode):
         return False
 
     def find_all_primary(self, name: str, with_alias=False) -> List["PrimaryNode"]:
+        """Find all PrimaryNode instances matching the given name."""
         matches: List[PrimaryNode] = []
 
         if self._matches_name(name, with_alias):
@@ -861,6 +922,7 @@ class PrimaryNode(_BaseRealNode):
     def find_primary(
         self, name_or_path: Union[str, Iterable[str]], with_alias=False
     ) -> "PrimaryNode":
+        """Find a primary node by name or path."""
         if isinstance(name_or_path, str):
             name_or_path = (name_or_path,)
 
@@ -908,6 +970,7 @@ class PrimaryNode(_BaseRealNode):
         raise NodeNotFoundError(name)
 
     def format_tree(self, extra=None, virtuals=False) -> str:
+        """Format the PrimaryNode and its children as a tree."""
         name = self.name
         if self.index is not None:
             name += f" (index={self.index})"
@@ -931,6 +994,7 @@ class PrimaryNode(_BaseRealNode):
     def find_real_node(
         self, name_or_path: Union[str, Iterable[str]], with_alias=False
     ) -> Union["PrimaryNode", "TagNode"]:
+        """Find a real node (PrimaryNode or TagNode) by name or path."""
         try:
             return self.find_primary(name_or_path, with_alias)
         except NodeNotFoundError:
@@ -946,10 +1010,17 @@ class PrimaryNode(_BaseRealNode):
         on_conflict: Literal["replace", "raise"] = "replace",
     ) -> PolyDescription:
         """
-        Takes the path to a node in a monohierarchy and transforms it
-        into a polyhierarchical description.
-        """
+        Get a PolyDescription from a list of descriptors.
 
+        Args:
+            descriptors (Iterable[Union[str, Iterable[str]]]): The descriptors to parse.
+            ignore_missing_intermediaries (bool, optional): Whether to ignore missing intermediaries. Defaults to False.
+            with_alias (bool, optional): Whether to consider aliases. Defaults to False.
+            on_conflict (Literal["replace", "raise"], optional): Conflict resolution strategy. Defaults to "replace".
+
+        Returns:
+            PolyDescription: The parsed PolyDescription.
+        """
         # Turn into tuple
         descriptors = tuple(descriptors)
 
@@ -1025,12 +1096,25 @@ class PrimaryNode(_BaseRealNode):
         with_alias=False,
         on_conflict: Literal["replace", "raise"] = "replace",
     ):
+        """
+        Parse a description string into a PolyDescription.
+
+        Args:
+            description (str): The description string to parse.
+            ignore_missing_intermediaries (bool, optional): Whether to ignore missing intermediaries. Defaults to False.
+            with_alias (bool, optional): Whether to consider aliases. Defaults to False.
+            on_conflict (Literal["replace", "raise"], optional): Conflict resolution strategy. Defaults to "replace".
+
+        Returns:
+            PolyDescription: The parsed PolyDescription.
+        """
         descriptors = _tokenize_expression_str(description)
         return self.get_description(
             descriptors, ignore_missing_intermediaries, with_alias, on_conflict
         )
 
     def union(self, other: "PrimaryNode"):
+        """Return the union of the current node with another node."""
         if self in other.precursors:
             return other
 
@@ -1096,8 +1180,13 @@ class Expression:
         !A matches if !A <= description
         -A matches if not (A <= description)
         -!A matches if not (!A <= description)
-        """
 
+        Args:
+            description (PolyDescription): The description to match.
+
+        Returns:
+            bool: True if the description matches, False otherwise.
+        """
         if not (self.include <= description):
             return False
 
@@ -1117,8 +1206,14 @@ class Expression:
 
         A/!A: A/!A is added to the description.
         -A/-!A: A/!A is removed from the description.
-        """
 
+        Args:
+            description (PolyDescription): The description to modify.
+            on_conflict (TOnConflictLiteral, optional): Conflict resolution strategy. Defaults to "replace".
+
+        Returns:
+            PolyDescription: The modified PolyDescription.
+        """
         description.add(self.include, on_conflict)
 
         for excl in self.exclude:
@@ -1153,6 +1248,7 @@ class PolyTaxonomy:
 
     @classmethod
     def from_dict(cls, tree_dict: Mapping):
+        """Create a PolyTaxonomy from a dictionary representation."""
         # Ensure single node
         (key, data), *remainder = list(tree_dict.items())
 
@@ -1164,6 +1260,7 @@ class PolyTaxonomy:
         return cls(root)
 
     def to_dict(self) -> Mapping:
+        """Convert the PolyTaxonomy to a dictionary representation."""
         return {self.root.name: self.root.to_dict()}
 
     def __eq__(self, other) -> bool:
@@ -1179,6 +1276,18 @@ class PolyTaxonomy:
         with_alias=False,
         on_conflict: Literal["replace", "raise"] = "replace",
     ) -> PolyDescription:
+        """
+        Get a PolyDescription from a list of descriptors.
+
+        Args:
+            descriptors (Iterable[Union[str, Iterable[str]]]): The descriptors to parse.
+            ignore_missing_intermediaries (bool, optional): Whether to ignore missing intermediaries. Defaults to False.
+            with_alias (bool, optional): Whether to consider aliases. Defaults to False.
+            on_conflict (Literal["replace", "raise"], optional): Conflict resolution strategy. Defaults to "replace".
+
+        Returns:
+            PolyDescription: The parsed PolyDescription.
+        """
         return self.root.get_description(
             descriptors, ignore_missing_intermediaries, with_alias, on_conflict
         )
@@ -1190,11 +1299,24 @@ class PolyTaxonomy:
         with_alias=False,
         on_conflict: Literal["replace", "raise"] = "replace",
     ) -> PolyDescription:
+        """
+        Parse a description string into a PolyDescription.
+
+        Args:
+            description (str): The description string to parse.
+            ignore_missing_intermediaries (bool, optional): Whether to ignore missing intermediaries. Defaults to False.
+            with_alias (bool, optional): Whether to consider aliases. Defaults to False.
+            on_conflict (Literal["replace", "raise"], optional): Conflict resolution strategy. Defaults to "replace".
+
+        Returns:
+            PolyDescription: The parsed PolyDescription.
+        """
         return self.root.parse_description(
             description, ignore_missing_intermediaries, with_alias, on_conflict
         )
 
     def parse_expression(self, expression_str: str) -> Expression:
+        """Parse an expression string into an Expression object."""
         include = []
         exclude = []
         for part in _tokenize_expression_str(expression_str):
@@ -1212,11 +1334,13 @@ class PolyTaxonomy:
         return Expression(include_dsc, exclude_descriptors)
 
     def get_node(self, node_name):
+        """Get a node by name."""
         (path,) = _tokenize_expression_str(node_name)
 
         return self.root.find_real_node(path)
 
     def fill_indices(self):
+        """Fill indices for all nodes in the taxonomy."""
         index_provider = IndexProvider()
         for node in self.root.walk():
             if isinstance(node, _BaseRealNode) and node.index is not None:
@@ -1227,9 +1351,11 @@ class PolyTaxonomy:
         return index_provider.n_labels
 
     def format_tree(self, extra=None, virtuals=False):
+        """Format the taxonomy as a tree."""
         return self.root.format_tree(extra, virtuals)
 
     def print_tree(self, extra=None, virtuals=False):
+        """Print the taxonomy as a tree."""
         print(self.format_tree(extra, virtuals))
 
     def parse_probabilities(
@@ -1248,8 +1374,17 @@ class PolyTaxonomy:
         If the score for a node exceeds the positive thresholds, the node is added to the
         description and the algorithm descends. If the score falls below the negative threshold,
         the negated node is added to the description.
-        """
 
+        Args:
+            probabilities (Union[Mapping[int, float], Sequence[float]]): The probability scores for the nodes.
+            baseline (Optional[PolyDescription], optional): The baseline description. Defaults to None.
+            thr_pos_abs (float, optional): The absolute positive threshold. Defaults to 0.9.
+            thr_pos_rel (float, optional): The relative positive threshold. Defaults to 0.25.
+            thr_neg (float, optional): The negative threshold. Defaults to 0.1.
+
+        Returns:
+            PolyDescription: The resulting description.
+        """
         if isinstance(probabilities, Mapping):
             probabilities = defaultdict(lambda: 0.5, probabilities)
         else:  # Sequence
