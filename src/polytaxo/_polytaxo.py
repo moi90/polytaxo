@@ -119,8 +119,17 @@ class PolyDescription:
         self.qualifiers: List[Descriptor] = []
 
         if qualifiers is not None:
-            for descriptor in qualifiers:
-                self.add(descriptor, on_conflict="raise")
+            self.update(qualifiers, on_conflict="raise")
+
+    def update(
+        self,
+        descriptors: Iterable[Descriptor],
+        on_conflict: TOnConflictLiteral = "replace",
+    ):
+        for descriptor in descriptors:
+            self.add(descriptor, on_conflict=on_conflict)
+
+        return self
 
     @property
     def descriptors(self) -> Sequence[Descriptor]:
@@ -147,13 +156,10 @@ class PolyDescription:
         return True
 
     def __str__(self) -> str:
-        parts = []
-        parts.append(str(self.anchor))
+        # Sort qualifiers alphabetically for stable lookup
+        qualifiers = sorted([q.format(anchor=self.anchor) for q in self.qualifiers])
 
-        for node in self.qualifiers:
-            parts.append(node.format(anchor=self.anchor))
-
-        return shlex.join(parts)
+        return shlex.join([str(self.anchor)] + qualifiers)
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} {self!s}>"
@@ -528,9 +534,15 @@ class _BaseRealNode(_BaseNode, Descriptor):
         name: str,
         parent: Optional["_BaseNode"],
         index: Optional[int],
+        meta: Optional[Mapping],
     ) -> None:
         super().__init__(name, parent)
         self.index = index
+
+        if meta is None:
+            meta = {}
+
+        self.meta = meta
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert the node to a dictionary representation."""
@@ -635,13 +647,16 @@ class NegatedRealNode(Descriptor, Generic[TRealNode]):
 class TagNode(_BaseRealNode):
     """Represents a tag node."""
 
+    parent: Union["PrimaryNode", "TagNode"]
+
     def __init__(
         self,
         name: str,
-        parent: Optional["_BaseNode"],
+        parent: Union["PrimaryNode", "TagNode"],
         index: Optional[int],
+        meta: Optional[Mapping] = None,
     ) -> None:
-        super().__init__(name, parent, index)
+        super().__init__(name, parent, index, meta)
 
         self.children: List["TagNode"] = []
 
@@ -653,7 +668,7 @@ class TagNode(_BaseRealNode):
         if data is None:
             data = {}
 
-        tag_node = TagNode(name, parent, data.get("index", None))
+        tag_node = TagNode(name, parent, data.get("index"), data.get("meta"))
 
         for child_name, child_data in data.get("children", {}).items():
             tag_node.add_child(TagNode.from_dict(child_name, child_data, tag_node))
@@ -713,12 +728,15 @@ class TagNode(_BaseRealNode):
         """Format the TagNode and its children as a tree."""
         name = self.name
 
-        extra = []
+        attrs = []
         if self.index is not None:
-            extra.append(f"index={self.index}")
+            attrs.append(f"index={self.index}")
 
-        if extra:
-            name = name + " (" + (", ".join(extra)) + ")"
+        if self.meta:
+            attrs.append(f"meta={self.meta}")
+
+        if attrs:
+            name = name + " (" + (", ".join(attrs)) + ")"
 
         if (self.index is not None) and (extra_info is not None):
             name += f" [{extra_info[self.index]}]"
@@ -797,8 +815,9 @@ class PrimaryNode(_BaseRealNode):
         parent: Optional["PrimaryNode"],
         index: Optional[int],
         alias: Optional[Iterable[str]] = None,
+        meta: Optional[Mapping] = None,
     ) -> None:
-        super().__init__(name, parent, index)
+        super().__init__(name, parent, index, meta)
         self.children: List["PrimaryNode"] = []
         self.tags: List[TagNode] = []
         self.virtuals: List[VirtualNode] = []
@@ -818,7 +837,9 @@ class PrimaryNode(_BaseRealNode):
             data = {}
 
         # Create node
-        node = PrimaryNode(name, parent, data.get("index"), data.get("alias"))
+        node = PrimaryNode(
+            name, parent, data.get("index"), data.get("alias"), data.get("meta")
+        )
 
         # Create tags
         for tag_name, tag_data in data.get("tags", {}).items():
@@ -829,7 +850,7 @@ class PrimaryNode(_BaseRealNode):
             node.add_child(PrimaryNode.from_dict(child_name, child_data, node))
 
         # Finally, create virtual nodes (which may reference tags and children)
-        for virtual_name, virtual_description in data.get("virtual", {}).items():
+        for virtual_name, virtual_description in data.get("virtuals", {}).items():
             try:
                 if isinstance(virtual_description, str):
                     description = node.parse_description(virtual_description)
@@ -972,10 +993,19 @@ class PrimaryNode(_BaseRealNode):
     def format_tree(self, extra=None, virtuals=False) -> str:
         """Format the PrimaryNode and its children as a tree."""
         name = self.name
+
+        attrs = []
         if self.index is not None:
-            name += f" (index={self.index})"
-            if extra is not None:
-                name += f" [{extra[self.index]}]"
+            attrs.append(f"index={self.index}")
+
+        if self.meta:
+            attrs.append(f"meta={self.meta}")
+
+        if attrs:
+            name = name + " (" + (", ".join(attrs)) + ")"
+
+        if self.index is not None and extra is not None:
+            name += f" [{extra[self.index]}]"
 
         lines = [f"{name}::"]
 
@@ -1354,6 +1384,9 @@ class PolyTaxonomy:
         """Format the taxonomy as a tree."""
         return self.root.format_tree(extra, virtuals)
 
+    def __str__(self) -> str:
+        return self.format_tree()
+
     def print_tree(self, extra=None, virtuals=False):
         """Print the taxonomy as a tree."""
         print(self.format_tree(extra, virtuals))
@@ -1374,6 +1407,9 @@ class PolyTaxonomy:
         If the score for a node exceeds the positive thresholds, the node is added to the
         description and the algorithm descends. If the score falls below the negative threshold,
         the negated node is added to the description.
+
+        If a baseline description is supplied, it is updated with compatible predictions.
+        Incompatible predictions will not be used, even if they obtain higher scores than any compatible prediction.
 
         Args:
             probabilities (Union[Mapping[int, float], Sequence[float]]): The probability scores for the nodes.

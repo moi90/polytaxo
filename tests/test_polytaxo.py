@@ -56,7 +56,7 @@ taxonomy_dict = {
                         }
                     },
                 },
-                "virtual": {
+                "virtuals": {
                     "male+lateral": "male lateral",
                     "male Calanus": ["Calanus", "male"],
                     "cropped": "cut",
