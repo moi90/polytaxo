@@ -50,12 +50,6 @@ class Descriptor(abc.ABC):
         """Return a unique identifier for the descriptor."""
         ...
 
-    def __hash__(self) -> int:
-        return hash(self.unique_id)
-
-    def __invert__(self):
-        return self.negate()
-
     @abc.abstractmethod
     def negate(self, negate: bool = True) -> "Descriptor":  # pragma: no cover
         """Negate the descriptor."""
@@ -66,17 +60,8 @@ class Descriptor(abc.ABC):
         """Format the descriptor as a string."""
         ...
 
-    def __str__(self) -> str:
-        return self.format()
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} {self.format()}>"
-
-    def __eq__(self, other: object) -> bool:
-        if type(self) != type(other):
-            return False
-
-        return self.unique_id == other.unique_id  # type: ignore
+    def __invert__(self):
+        return self.negate()
 
     def __le__(self, other) -> bool:  # pragma: no cover
         """Return True if self is implied by other."""
@@ -88,6 +73,21 @@ class Descriptor(abc.ABC):
 
         return NotImplemented
 
+    def __eq__(self, other: object) -> bool:
+        if type(self) != type(other):
+            return False
+
+        return self.unique_id == other.unique_id  # type: ignore
+
+    def __hash__(self) -> int:
+        return hash(self.unique_id)
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} {self.format()}>"
+
+    def __str__(self) -> str:
+        return self.format()
+
 
 class NeverDescriptor(Descriptor):
     """A descriptor that is never implied by another (even itself)."""
@@ -96,14 +96,14 @@ class NeverDescriptor(Descriptor):
     def unique_id(self):
         raise NotImplementedError()
 
-    def __le__(self, other) -> bool:
-        return False
-
     def negate(self, negate: bool = True) -> Descriptor:
         raise NotImplementedError()
 
     def format(self, anchor: Optional["PrimaryNode"] = None) -> str:
         raise NotImplementedError()
+
+    def __le__(self, other) -> bool:
+        return False
 
     def __repr__(self) -> str:
         return object.__repr__(self)
@@ -121,48 +121,10 @@ class PolyDescription:
         if qualifiers is not None:
             self.update(qualifiers, on_conflict="raise")
 
-    def update(
-        self,
-        descriptors: Iterable[Descriptor],
-        on_conflict: TOnConflictLiteral = "replace",
-    ):
-        for descriptor in descriptors:
-            self.add(descriptor, on_conflict=on_conflict)
-
-        return self
-
     @property
     def descriptors(self) -> Sequence[Descriptor]:
         """Return all descriptors including the anchor and qualifiers."""
         return [self.anchor] + self.qualifiers
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, PolyDescription):
-            return False
-
-        return set(self.descriptors) == set(other.descriptors)
-
-    def __hash__(self) -> int:
-        return hash(frozenset(self.descriptors))
-
-    def __le__(self, other) -> bool:
-        if not isinstance(other, PolyDescription):
-            return NotImplemented
-
-        for d in self.descriptors:
-            if not (d <= other):
-                return False
-
-        return True
-
-    def __str__(self) -> str:
-        # Sort qualifiers alphabetically for stable lookup
-        qualifiers = sorted([q.format(anchor=self.anchor) for q in self.qualifiers])
-
-        return shlex.join([str(self.anchor)] + qualifiers)
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} {self!s}>"
 
     def to_binary_raw(self) -> Mapping["_BaseRealNode", bool]:
         """Convert the description to a binary representation with nodes and their active state."""
@@ -369,6 +331,16 @@ class PolyDescription:
 
         return self
 
+    def update(
+        self,
+        descriptors: Iterable[Descriptor],
+        on_conflict: TOnConflictLiteral = "replace",
+    ):
+        for descriptor in descriptors:
+            self.add(descriptor, on_conflict=on_conflict)
+
+        return self
+
     def _remove_poly_description(self, other: "PolyDescription"):
         for descriptor in other.descriptors:
             self.remove(descriptor)
@@ -418,6 +390,34 @@ class PolyDescription:
             raise ValueError(f"Unexpected type of other: {type(other)}")
 
         return self
+
+    def __le__(self, other) -> bool:
+        if not isinstance(other, PolyDescription):
+            return NotImplemented
+
+        for d in self.descriptors:
+            if not (d <= other):
+                return False
+
+        return True
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, PolyDescription):
+            return False
+
+        return set(self.descriptors) == set(other.descriptors)
+
+    def __hash__(self) -> int:
+        return hash(frozenset(self.descriptors))
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} {self!s}>"
+
+    def __str__(self) -> str:
+        # Sort qualifiers alphabetically for stable lookup
+        qualifiers = sorted([q.format(anchor=self.anchor) for q in self.qualifiers])
+
+        return shlex.join([str(self.anchor)] + qualifiers)
 
 
 class _BaseNode:
@@ -748,18 +748,6 @@ class TagNode(_BaseRealNode):
 
         return "\n".join(lines)
 
-    def __le__(self, other) -> bool:
-        if isinstance(other, TagNode):
-            return self in other.precursors
-
-        if isinstance(other, PrimaryNode):
-            return False
-
-        if isinstance(other, NegatedRealNode):
-            return False
-
-        return Descriptor.__le__(self, other)
-
     @functools.cached_property
     def rivalling_children(self):
         """The set of directly rivalling descendants."""
@@ -772,6 +760,18 @@ class TagNode(_BaseRealNode):
                 result.extend(child.rivalling_children)
 
         return result
+
+    def __le__(self, other) -> bool:
+        if isinstance(other, TagNode):
+            return self in other.precursors
+
+        if isinstance(other, PrimaryNode):
+            return False
+
+        if isinstance(other, NegatedRealNode):
+            return False
+
+        return Descriptor.__le__(self, other)
 
 
 def _tokenize_expression_str(query_str: str):
@@ -1153,18 +1153,6 @@ class PrimaryNode(_BaseRealNode):
 
         raise ValueError(f"{self} and {other} are incompatible")
 
-    def __le__(self, other) -> bool:
-        if isinstance(other, PrimaryNode):
-            return self in other.precursors
-
-        if isinstance(other, TagNode):
-            return False
-
-        if isinstance(other, NegatedRealNode):
-            return False
-
-        return Descriptor.__le__(self, other)
-
     @functools.cached_property
     def rivalling_children(self):
         """The set of directly rivalling descendants."""
@@ -1183,6 +1171,18 @@ class PrimaryNode(_BaseRealNode):
             return NeverDescriptor()
 
         return super().negate(negate)
+
+    def __le__(self, other) -> bool:
+        if isinstance(other, PrimaryNode):
+            return self in other.precursors
+
+        if isinstance(other, TagNode):
+            return False
+
+        if isinstance(other, NegatedRealNode):
+            return False
+
+        return Descriptor.__le__(self, other)
 
 
 class Expression:
@@ -1251,6 +1251,12 @@ class Expression:
 
         return description
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Expression):
+            return NotImplemented
+
+        return (self.include == other.include) and (self.exclude == other.exclude)
+
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(include={self.include!r}, exclude={self.exclude!r})>"
 
@@ -1262,12 +1268,6 @@ class Expression:
             else:
                 exclude.append(f"-({excl})")
         return str(self.include) + " " + shlex.join(exclude)
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Expression):
-            return NotImplemented
-
-        return (self.include == other.include) and (self.exclude == other.exclude)
 
 
 class PolyTaxonomy:
@@ -1292,12 +1292,6 @@ class PolyTaxonomy:
     def to_dict(self) -> Mapping:
         """Convert the PolyTaxonomy to a dictionary representation."""
         return {self.root.name: self.root.to_dict()}
-
-    def __eq__(self, other) -> bool:
-        if not isinstance(other, PolyTaxonomy):
-            return NotImplemented
-
-        return self.root == other.root
 
     def get_description(
         self,
@@ -1383,9 +1377,6 @@ class PolyTaxonomy:
     def format_tree(self, extra=None, virtuals=False):
         """Format the taxonomy as a tree."""
         return self.root.format_tree(extra, virtuals)
-
-    def __str__(self) -> str:
-        return self.format_tree()
 
     def print_tree(self, extra=None, virtuals=False):
         """Print the taxonomy as a tree."""
@@ -1514,3 +1505,12 @@ class PolyTaxonomy:
                 handle_tag(tag)
 
         return description
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, PolyTaxonomy):
+            return NotImplemented
+
+        return self.root == other.root
+
+    def __str__(self) -> str:
+        return self.format_tree()
