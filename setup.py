@@ -28,7 +28,6 @@ setup(
         "docs": [
             "sphinx >= 1.4",
         ],
-        "dev": ["black"],
     },
     classifiers=[
         "Programming Language :: Python :: 3",

@@ -1,14 +1,12 @@
-from ._polytaxo import (
-    ConflictError,
-    Descriptor,
+from .descriptor import Descriptor, NeverDescriptor
+from .taxonomy import PolyTaxonomy, Expression
+from .core import (
     IndexProvider,
     NegatedRealNode,
-    NeverDescriptor,
     NodeNotFoundError,
-    PolyDescription,
-    PolyTaxonomy,
     PrimaryNode,
     TagNode,
     VirtualNode,
-    Expression,
+    ConflictError,
+    PolyDescription,
 )
