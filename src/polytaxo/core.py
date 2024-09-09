@@ -32,7 +32,7 @@ class NodeNotFoundError(Exception):
 
 class TreeDescriptor(Descriptor):
     def __le__(self, other) -> bool:
-        if isinstance(other, PolyDescription):
+        if isinstance(other, Description):
             for other_descriptor in other.descriptors:
                 if self <= other_descriptor:
                     return True
@@ -402,7 +402,7 @@ class VirtualNode(BaseNode):
         self,
         name: str,
         parent: Optional["BaseNode"],
-        description: "PolyDescription",
+        description: "Description",
     ) -> None:
         super().__init__(name, parent)
 
@@ -653,7 +653,7 @@ class PrimaryNode(RealNode):
         ignore_missing_intermediaries=False,
         with_alias=False,
         on_conflict: Literal["replace", "raise"] = "replace",
-    ) -> "PolyDescription":
+    ) -> "Description":
         """
         Get a PolyDescription from a list of descriptors.
 
@@ -670,7 +670,7 @@ class PrimaryNode(RealNode):
         descriptors = tuple(descriptors)
 
         def process_descriptors(
-            description: "PolyDescription", descriptors: Sequence, with_alias
+            description: "Description", descriptors: Sequence, with_alias
         ):
             unmatched_parts = []
 
@@ -721,7 +721,7 @@ class PrimaryNode(RealNode):
             return description, unmatched_parts
 
         description, unmatched_parts = process_descriptors(
-            PolyDescription(self), descriptors, False
+            Description(self), descriptors, False
         )
 
         if unmatched_parts and with_alias:
@@ -809,7 +809,7 @@ class ConflictError(Exception):
     pass
 
 
-class PolyDescription:
+class Description:
     """Represents a polyhierarchical description."""
 
     def __init__(
@@ -885,13 +885,13 @@ class PolyDescription:
 
         return [int_map.get(i, fill_na) for i in range(n_labels)]
 
-    def copy(self) -> "PolyDescription":
+    def copy(self) -> "Description":
         """Create a copy of the current PolyDescription."""
-        return PolyDescription(self.anchor, self.qualifiers)
+        return Description(self.anchor, self.qualifiers)
 
     def _add_poly_description(
         self,
-        other: "PolyDescription",
+        other: "Description",
         on_conflict: TOnConflictLiteral,
     ):
         self.add(other.anchor, on_conflict)
@@ -1005,14 +1005,14 @@ class PolyDescription:
 
     def add(
         self,
-        other: Union["PolyDescription", Descriptor],
+        other: Union["Description", Descriptor],
         on_conflict: TOnConflictLiteral = "replace",
-    ) -> "PolyDescription":
+    ) -> "Description":
         """Add a descriptor or poly description to the current description."""
         if on_conflict not in ("replace", "raise", "skip"):
             raise ValueError(f"Unexpected value for on_conflict: {on_conflict}")
 
-        if isinstance(other, PolyDescription):
+        if isinstance(other, Description):
             self._add_poly_description(other, on_conflict)
 
         elif isinstance(other, PrimaryNode):
@@ -1047,7 +1047,7 @@ class PolyDescription:
 
         return self
 
-    def _remove_poly_description(self, other: "PolyDescription"):
+    def _remove_poly_description(self, other: "Description"):
         for descriptor in other.descriptors:
             self.remove(descriptor)
 
@@ -1081,9 +1081,9 @@ class PolyDescription:
 
         self.qualifiers = new_qualifiers
 
-    def remove(self, other: Union["PolyDescription", Descriptor]):
+    def remove(self, other: Union["Description", Descriptor]):
         """Remove a descriptor or poly description from the current description."""
-        if isinstance(other, PolyDescription):
+        if isinstance(other, Description):
             self._remove_poly_description(other)
 
         elif isinstance(other, PrimaryNode):
@@ -1098,7 +1098,7 @@ class PolyDescription:
         return self
 
     def __le__(self, other) -> bool:
-        if not isinstance(other, PolyDescription):
+        if not isinstance(other, Description):
             return NotImplemented
 
         for d in self.descriptors:
@@ -1108,7 +1108,7 @@ class PolyDescription:
         return True
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, PolyDescription):
+        if not isinstance(other, Description):
             return False
 
         return set(self.descriptors) == set(other.descriptors)

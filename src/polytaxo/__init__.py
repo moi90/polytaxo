@@ -8,5 +8,5 @@ from .core import (
     TagNode,
     VirtualNode,
     ConflictError,
-    PolyDescription,
+    Description,
 )

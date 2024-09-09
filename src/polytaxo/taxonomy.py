@@ -7,7 +7,7 @@ from .descriptor import Descriptor
 from .parser import _tokenize_expression_str
 from .core import (
     IndexProvider,
-    PolyDescription,
+    Description,
     PrimaryNode,
     RealNode,
     TagNode,
@@ -26,13 +26,13 @@ class Expression:
 
     def __init__(
         self,
-        include: PolyDescription,
-        exclude: Sequence[Union[PolyDescription, Descriptor]],
+        include: Description,
+        exclude: Sequence[Union[Description, Descriptor]],
     ):
         self.include = include
         self.exclude = exclude
 
-    def match(self, description: PolyDescription) -> bool:
+    def match(self, description: Description) -> bool:
         """
         Check if a given PolyDescription matches the expression.
 
@@ -58,9 +58,9 @@ class Expression:
 
     def apply(
         self,
-        description: PolyDescription,
+        description: Description,
         on_conflict: TOnConflictLiteral = "replace",
-    ) -> PolyDescription:
+    ) -> Description:
         """
         Apply the expression (in-place) to the given PolyDescription.
 
@@ -129,7 +129,7 @@ class PolyTaxonomy:
         ignore_missing_intermediaries=False,
         with_alias=False,
         on_conflict: Literal["replace", "raise"] = "replace",
-    ) -> PolyDescription:
+    ) -> Description:
         """
         Get a PolyDescription from a list of descriptors.
 
@@ -152,7 +152,7 @@ class PolyTaxonomy:
         ignore_missing_intermediaries=False,
         with_alias=False,
         on_conflict: Literal["replace", "raise"] = "replace",
-    ) -> PolyDescription:
+    ) -> Description:
         """
         Parse a description string into a PolyDescription.
 
@@ -216,11 +216,11 @@ class PolyTaxonomy:
         self,
         probabilities: Union[Mapping[int, float], Sequence[float]],
         *,
-        baseline: Optional[PolyDescription] = None,
+        baseline: Optional[Description] = None,
         thr_pos_abs=0.9,
         thr_pos_rel=0.25,
         thr_neg=0.1,
-    ) -> PolyDescription:
+    ) -> Description:
         """
         Turn per-node probability scores (between 0 and 1) into a description.
 
@@ -250,7 +250,7 @@ class PolyTaxonomy:
             )
 
         if baseline is None:
-            baseline = PolyDescription(self.root)
+            baseline = Description(self.root)
 
         description = baseline.copy()
 
@@ -286,9 +286,7 @@ class PolyTaxonomy:
                     else:
                         break
 
-        def handle_primary(
-            description: PolyDescription, node: PrimaryNode
-        ) -> PolyDescription:
+        def handle_primary(description: Description, node: PrimaryNode) -> Description:
             # Gather all rival direct (and, in case of index==None, indirect) descendants of node
             candidate_scores = [(n, probabilities[n.index]) for n in node.rivalling_children]  # type: ignore
 
