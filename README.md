@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `PolyTaxonomy` library is a versatile hierarchical classification system designed to handle complex, polyhierarchical descriptions.
+The `PolyTaxo` library is a versatile hierarchical classification system designed to handle complex, polyhierarchical descriptions.
 It allows for the creation, manipulation, and querying of a taxonomy where nodes can belong to multiple categories, supporting both hierarchical and non-hierarchical structures.
 This library is particularly useful for organizing data with overlapping categories, such as multi-label classification, tagging systems, and ontologies.
 
@@ -11,9 +11,10 @@ This library is particularly useful for organizing data with overlapping categor
 - **Flexible Hierarchical Structure:** Create and manipulate taxonomies with both hierarchical and polyhierarchical relationships.
 - **Descriptor-Based Classification:** Use descriptors to define, negate, and query hierarchical structures.
 - **Conflict Resolution:** Handle conflicting descriptors with customizable conflict resolution strategies (`replace`, `skip`, `raise`).
-- **Virtual Nodes:** Define nodes with complex descriptions that don't exist in the primary hierarchy.
 - **Expression Parsing:** Parse and apply complex expressions to match or modify descriptions.
 - **Probability-Based Classification:** Generate descriptions based on probability distributions over nodes.
+- **Parsing of Linear Hierarchies:** Parse linear hierarchies to obtain PolyTaxo descriptions.
+  **Virtual Nodes** define complex descriptions so that compound names that don't exist in the primary hierarchy can be broken down into simpler concepts.
 
 ## Usage Examples
 
@@ -22,9 +23,9 @@ This library is particularly useful for organizing data with overlapping categor
 Here’s how to create a taxonomy for zooplankton classification:
 
 ```python
-from polytaxonomy import PolyTaxonomy
+from polytaxo import PolyTaxonomy
 
-taxonomy_data = {
+taxonomy_dict = {
     "Copepoda": {
         "tags": {
             "view": {"lateral": {}, "dorsal": {}, "ventral": {}},
@@ -38,7 +39,7 @@ taxonomy_data = {
     }
 }
 
-taxonomy = PolyTaxonomy.from_dict(taxonomy_data)
+taxonomy = PolyTaxonomy.from_dict(taxonomy_dict)
 ```
 
 ### Describing Objects
@@ -46,8 +47,8 @@ taxonomy = PolyTaxonomy.from_dict(taxonomy_data)
 Using the created taxonomy, you can describe specific objects:
 
 ```python
-description = taxonomy.get_description(["Copepoda", "Calanus", "view:lateral", "sex:female"])
-print(description)  # Output: Copepoda/Calanus view:lateral sex:female
+description = taxonomy.parse_description("Copepoda Calanus view:lateral sex:female")
+print(description)  # Output: /Copepoda/Calanus view:lateral sex:female
 ```
 
 ### Parsing Complex Expressions
@@ -84,7 +85,7 @@ This polyhierarchical system allows for complex queries and facilitats advanced 
 
 ## Contributing
 
-Contributions are welcome! Please submit issues or pull requests on the GitHub repository.
+Contributions are welcome! Please submit issues or pull requests on the [GitHub repository](https://github.com/moi90/polytaxo).
 
 ## License
 

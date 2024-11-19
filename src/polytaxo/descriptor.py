@@ -27,7 +27,7 @@ class Descriptor(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def format(self, anchor: Optional["PrimaryNode"] = None) -> str:
+    def format(self, anchor: Optional["PrimaryNode"] = None, quoted=False) -> str:
         """Format the descriptor as a string."""
         ...
 

@@ -24,6 +24,7 @@ setup(
             # Pytest
             "pytest",
             "pytest-cov",
+            "hypothesis",
         ],
         "docs": [
             "sphinx >= 1.4",

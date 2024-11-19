@@ -1,10 +1,10 @@
-import fnmatch
 import functools
 import itertools
-import shlex
-from textwrap import indent
+import operator
+from textwrap import dedent, indent
 from typing import (
     Any,
+    Callable,
     Dict,
     Generic,
     Iterable,
@@ -20,8 +20,31 @@ from typing import (
     Union,
 )
 
+from .alias import Alias
 from .descriptor import Descriptor, NeverDescriptor
-from .parser import _tokenize_expression_str
+from .parser import quote, tokenize
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def fill_in_doc(fields: Mapping[str, str]) -> Callable[[F], F]:
+    fields = {k: dedent(v) for k, v in fields.items()}
+
+    def decorator(decorated: F) -> F:
+        if decorated.__doc__:
+            decorated.__doc__ = dedent(decorated.__doc__).format_map(fields)
+
+        return decorated
+
+    return decorator
+
+
+_doc_fields = {
+    "anchor_arg": """anchor (PrimaryNode): The starting point for interpreting descriptors.""",
+    "on_conflict_arg": """on_conflict ("replace", "raise", or "skip", optional): Conflict resolution strategy. Defaults to "replace".""",
+    "ignore_unmatched_intermediaries_arg": """ignore_unmatched_intermediaries (bool, optional): Whether to ignore unmatched intermediaries. Defaults to False.""",
+    "with_alias_arg": """with_alias (bool, optional): Whether to consider aliases. Defaults to False.""",
+}
 
 
 class NodeNotFoundError(Exception):
@@ -38,7 +61,13 @@ class TreeDescriptor(Descriptor):
                     return True
             return False
 
-        return NotImplemented
+        return NotImplemented  # pragma: no cover
+
+
+def _validate_name_or_path(name_or_path: Union[str, Sequence[str]]) -> Sequence[str]:
+    if isinstance(name_or_path, str):
+        return (name_or_path,)
+    return name_or_path
 
 
 class BaseNode:
@@ -48,14 +77,17 @@ class BaseNode:
         self,
         name: str,
         parent: Optional["BaseNode"],
+        aliases: Optional[Iterable[str]] = None,
     ) -> None:
         self.name = name
         self.parent = parent
 
-    def set_parent(self, parent: Optional["BaseNode"]):
-        """Set the parent node."""
-        self.parent = parent
-        return self
+        if aliases is None:
+            aliases = tuple()
+        elif isinstance(aliases, str):
+            aliases = (aliases,)
+
+        self.aliases = tuple(Alias(a) for a in aliases)
 
     @functools.cached_property
     def precursors(self) -> Tuple["BaseNode", ...]:
@@ -84,7 +116,7 @@ class BaseNode:
         """Return the path from the root to this node as a tuple of names."""
         return tuple(n.name for n in self.precursors)
 
-    def format(self, anchor: Union["PrimaryNode", None] = None) -> str:
+    def format(self, anchor: Union["PrimaryNode", None] = None, quoted=False) -> str:
         """Format the node as a string relative to an optional anchor."""
         precursors = self.precursors
 
@@ -96,13 +128,11 @@ class BaseNode:
                 if tag_anchor in anchor.precursors:
                     anchor = tag_anchor
 
-            if anchor != self:
-                try:
-                    i = precursors.index(anchor)
-                except:
-                    pass
-                else:
-                    precursors = precursors[i + 1 :]
+            if anchor == self:
+                return self.name
+
+            i = precursors.index(anchor)
+            precursors = precursors[i + 1 :]
 
         def build():
             sep = ""
@@ -113,7 +143,38 @@ class BaseNode:
                 else:
                     sep = "/"
 
-        return "".join(build())
+        result = "".join(build())
+        if quoted:
+            return quote(result)
+        return result
+
+    def _matches_name(self, name: str, with_alias: bool) -> int:
+        """Check if the node matches the given name or alias."""
+        if name == self.name:
+            return 1 + len(name)
+
+        if with_alias:
+            return max((a.match(name) for a in self.aliases), default=0)
+
+        return 0
+
+
+TBaseNode = TypeVar("TBaseNode", bound=BaseNode)
+
+
+def _best_match(
+    anchor: BaseNode, name_or_path, matches: Iterable[Tuple[TBaseNode, int]]
+) -> TBaseNode:
+    matches = list(matches)
+
+    if not matches:
+        raise NodeNotFoundError(
+            f"Could not find {name_or_path} from anchor {quote(anchor.format())}"
+        )
+
+    # Select most specific match
+    matches.sort(key=operator.itemgetter(1), reverse=True)
+    return matches[0][0]
 
 
 class IndexProvider:
@@ -156,8 +217,9 @@ class RealNode(BaseNode, TreeDescriptor):
         parent: Optional["BaseNode"],
         index: Optional[int],
         meta: Optional[Mapping],
+        aliases: Optional[Iterable[str]] = None,
     ) -> None:
-        super().__init__(name, parent)
+        super().__init__(name, parent, aliases)
         self.index = index
 
         if meta is None:
@@ -217,9 +279,9 @@ class NegatedRealNode(TreeDescriptor, Generic[TRealNode]):
 
         self.node = node
 
-    def format(self, anchor: Union["PrimaryNode", None] = None) -> str:
+    def format(self, anchor: Union["PrimaryNode", None] = None, quoted=False) -> str:
         """Format the negated node as a string."""
-        return f"!{self.node.format(anchor)}"
+        return f"!{self.node.format(anchor, quoted=quoted)}"
 
     @property
     def unique_id(self):
@@ -276,8 +338,9 @@ class TagNode(RealNode):
         parent: Union["PrimaryNode", "TagNode"],
         index: Optional[int],
         meta: Optional[Mapping] = None,
+        aliases: Optional[Iterable[str]] = None,
     ) -> None:
-        super().__init__(name, parent, index, meta)
+        super().__init__(name, parent, index, meta, aliases)
 
         self.children: List["TagNode"] = []
 
@@ -289,7 +352,13 @@ class TagNode(RealNode):
         if data is None:
             data = {}
 
-        tag_node = TagNode(name, parent, data.get("index"), data.get("meta"))
+        tag_node = TagNode(
+            name,
+            parent,
+            data.get("index"),
+            data.get("meta"),
+            data.get("alias"),
+        )
 
         for child_name, child_data in data.get("children", {}).items():
             tag_node.add_child(TagNode.from_dict(child_name, child_data, tag_node))
@@ -312,38 +381,50 @@ class TagNode(RealNode):
         return self.children
 
     @functools.cached_property
-    def primary_parent(self) -> Optional["PrimaryNode"]:
+    def primary_parent(self) -> "PrimaryNode":
         """Return the primary parent (first parent that is a PrimaryNode) of the TagNode."""
         parent = self.parent
         while parent is not None:
             if isinstance(parent, PrimaryNode):
                 return parent
             parent = parent.parent
-        return None
 
-    def _find_tag(self, name) -> "TagNode":
-        if name == self.name:
-            return self
+        raise ValueError(
+            f"Tag without a primary parent: {self.name}"
+        )  # pragma: no cover
 
+    def _find_all_tag(
+        self, path: Sequence[str], with_alias=False, _base_specificy=0
+    ) -> Iterable[Tuple["TagNode", int]]:
+        """Find all TagNode instances matching the given path."""
+
+        name, *tail = path
+
+        specificy = self._matches_name(name, with_alias)
+
+        # If self matches, descend with rest of the path
+        if specificy:
+            if tail:
+                for child in self.children:
+                    yield from child._find_all_tag(
+                        tail, with_alias, specificy + _base_specificy
+                    )
+            else:
+                yield (self, specificy + _base_specificy)
+
+        # Also descend with the full path to find nodes that didn't specify the full path
         for child in self.children:
-            try:
-                return child._find_tag(name)
-            except NodeNotFoundError:
-                pass
+            yield from child._find_all_tag(path, with_alias, _base_specificy)
 
-        raise NodeNotFoundError(name)
-
-    def find_tag(self, name_or_path: Union[str, Iterable[str]]) -> "TagNode":
+    def find_tag(
+        self, name_or_path: Union[str, Sequence[str]], with_alias=False
+    ) -> "TagNode":
         """Find a tag by name or path."""
-        if isinstance(name_or_path, str):
-            name_or_path = (name_or_path,)
+        name_or_path = _validate_name_or_path(name_or_path)
 
-        node = self
-        while name_or_path:
-            head, *name_or_path = name_or_path
-            node = node._find_tag(head)
-
-        return node
+        return _best_match(
+            self, name_or_path, self._find_all_tag(name_or_path, with_alias)
+        )
 
     def format_tree(self, extra_info=None) -> str:
         """Format the TagNode and its children as a tree."""
@@ -426,23 +507,19 @@ class PrimaryNode(RealNode):
         name: str,
         parent: Optional["PrimaryNode"],
         index: Optional[int],
-        alias: Optional[Iterable[str]] = None,
         meta: Optional[Mapping] = None,
+        aliases: Optional[Iterable[str]] = None,
     ) -> None:
-        super().__init__(name, parent, index, meta)
+        super().__init__(name, parent, index, meta, aliases)
         self.children: List["PrimaryNode"] = []
         self.tags: List[TagNode] = []
         self.virtuals: List[VirtualNode] = []
 
-        if alias is None:
-            alias = tuple()
-        elif isinstance(alias, str):
-            alias = (alias,)
-        self.alias = tuple(alias)
-
     @staticmethod
     def from_dict(
-        name, data: Optional[Mapping], parent: Optional["PrimaryNode"]
+        name,
+        data: Optional[Mapping],
+        parent: Optional["PrimaryNode"] = None,
     ) -> "PrimaryNode":
         """Create a PrimaryNode from a dictionary representation."""
         if data is None:
@@ -450,7 +527,11 @@ class PrimaryNode(RealNode):
 
         # Create node
         node = PrimaryNode(
-            name, parent, data.get("index"), data.get("alias"), data.get("meta")
+            name,
+            parent,
+            data.get("index"),
+            data.get("meta"),
+            data.get("alias"),
         )
 
         # Create tags
@@ -464,12 +545,8 @@ class PrimaryNode(RealNode):
         # Finally, create virtual nodes (which may reference tags and children)
         for virtual_name, virtual_description in data.get("virtuals", {}).items():
             try:
-                if isinstance(virtual_description, str):
-                    description = node.parse_description(virtual_description)
-                else:
-                    description = node.get_description(virtual_description)
-                virtual_node = VirtualNode(virtual_name, node, description)
-                node.add_virtual(virtual_node)
+                description = node.parse_description(virtual_description)
+                node.add_virtual(VirtualNode(virtual_name, node, description))
             except Exception as exc:
                 raise ValueError(
                     f"Error parsing description {virtual_description!r} of virtual node '{node}/{virtual_name}'"
@@ -480,11 +557,11 @@ class PrimaryNode(RealNode):
     def to_dict(self):
         """Convert the PrimaryNode to a dictionary representation."""
         d = super().to_dict()
-        if self.alias:
-            if isinstance(self.alias, str) or len(self.alias) > 1:
-                d["alias"] = self.alias
+        if self.aliases:
+            if isinstance(self.aliases, str) or len(self.aliases) > 1:
+                d["alias"] = [a.pattern for a in self.aliases]
             else:
-                d["alias"] = self.alias[0]  # type: ignore
+                d["alias"] = self.aliases[0].pattern  # type: ignore
 
         if self.children:
             d["children"] = {c.name: c.to_dict() for c in self.children}
@@ -501,50 +578,88 @@ class PrimaryNode(RealNode):
 
     def add_child(self, node: "PrimaryNode"):
         """Add a child PrimaryNode."""
+        # TODO: Make sure that the new node does not shadow an existing one
         self.children.append(node)
         return node
 
     def add_tag(self, node: TagNode):
         """Add a TagNode."""
+        # TODO: Make sure that the new node does not shadow an existing one
         self.tags.append(node)
         return node
 
     def add_virtual(self, node: VirtualNode):
         """Add a VirtualNode."""
+        # TODO: Make sure that the new node does not shadow an existing one
         self.virtuals.append(node)
         return node
 
-    def _matches_name(self, name: str, with_alias: bool):
-        """Check if the node matches the given name or alias."""
-        if name == self.name:
-            return True
+    def _find_all_primary(
+        self, path: Sequence[str], with_alias=False, _base_specificy=0
+    ) -> Iterable[Tuple["PrimaryNode", int]]:
+        """Find all PrimaryNode instances matching the given path."""
 
-        if with_alias:
-            for alias in self.alias:
-                if fnmatch.fnmatch(name, alias):
-                    return True
+        name, *tail = path
 
-        return False
+        specificy = self._matches_name(name, with_alias)
 
-    def find_all_primary(self, name: str, with_alias=False) -> List["PrimaryNode"]:
-        """Find all PrimaryNode instances matching the given name."""
-        matches: List[PrimaryNode] = []
+        # If self matches, descend with rest of the path
+        if specificy:
+            if tail:
+                for child in self.children:
+                    yield from child._find_all_primary(
+                        tail, with_alias, specificy + _base_specificy
+                    )
+            else:
+                yield (self, specificy + _base_specificy)
 
-        if self._matches_name(name, with_alias):
-            matches.append(self)
-
+        # Also descend with the full path to find nodes that didn't specify the full path
         for child in self.children:
-            matches.extend(child.find_all_primary(name, with_alias))
+            yield from child._find_all_primary(path, with_alias, _base_specificy)
 
-        return matches
+    def _find_all_tag(
+        self, path: Sequence[str], with_alias=False
+    ) -> Iterable[Tuple["TagNode", int]]:
+        """Find all TagNode instances matching the given path."""
+
+        for tag in self.tags:
+            yield from tag._find_all_tag(path, with_alias)
+
+        if self.parent is not None:
+            yield from self.parent._find_all_tag(path, with_alias)
+
+    def _find_all_virtual(
+        self, path: Sequence[str], with_alias=False, _base_specificy=0
+    ) -> Iterable[Tuple["VirtualNode", int]]:
+        """Find all TagNode instances matching the given path."""
+
+        name, *tail = path
+
+        specificy = self._matches_name(name, with_alias)
+        if specificy and tail:
+            for child in self.children:
+                yield from child._find_all_virtual(
+                    tail, with_alias, specificy + _base_specificy
+                )
+
+        if not tail:
+            for virtual in self.virtuals:
+                specificy = virtual._matches_name(name, with_alias)
+                if specificy:
+                    yield (virtual, specificy)
+
+        if self.parent is not None:
+            yield from self.parent._find_all_virtual(path, with_alias, _base_specificy)
 
     def _find_primary(self, name, with_alias=False) -> "PrimaryNode":
         """Return the first PrimaryNode from the current subtree with the given name."""
 
-        matches = self.find_all_primary(name, with_alias)
+        matches = self._find_all_primary(name, with_alias)
 
         if not matches:
-            raise NodeNotFoundError(name)
+            raise NodeNotFoundError(
+                f"Could not find {name} below {quote(self.format())}"
+            )
 
         # If we're matching with alias, multiple children can produce a match.
         # We therefore select the shortest match
@@ -553,20 +668,16 @@ class PrimaryNode(RealNode):
         return matches[0]
 
     def find_primary(
-        self, name_or_path: Union[str, Iterable[str]], with_alias=False
+        self, name_or_path: Union[str, Sequence[str]], with_alias=False
     ) -> "PrimaryNode":
         """Find a primary node by name or path."""
-        if isinstance(name_or_path, str):
-            name_or_path = (name_or_path,)
+        name_or_path = _validate_name_or_path(name_or_path)
 
-        anchor = self
-        while name_or_path:
-            head, *name_or_path = name_or_path
-            anchor = anchor._find_primary(head, with_alias)
+        return _best_match(
+            self, name_or_path, self._find_all_primary(name_or_path, with_alias)
+        )
 
-        return anchor
-
-    def find_tag(self, name_or_path: Union[str, Iterable[str]]) -> TagNode:
+    def find_tag(self, name_or_path: Union[str, Sequence[str]]) -> TagNode:
         """Find specified tag in this node or its parents."""
         for tag in self.tags:
             try:
@@ -577,33 +688,71 @@ class PrimaryNode(RealNode):
         if self.parent is not None:
             return self.parent.find_tag(name_or_path)
 
-        raise NodeNotFoundError(name_or_path)
+        raise NodeNotFoundError(
+            f"Could not find {name_or_path} below {quote(self.format())}"
+        )
 
     def get_applicable_virtuals(self):
-        yield from self.virtuals
+        node = self
+        while node is not None:
+            yield from node.virtuals
+            node = node.parent
 
-        if self.parent is not None:
-            yield from self.parent.get_applicable_virtuals()
-
-    def find_virtual(self, name_or_path: Union[str, Iterable[str]]) -> VirtualNode:
+    def find_virtual(
+        self, name_or_path: Union[str, Sequence[str]], with_alias=False
+    ) -> VirtualNode:
         """Find specified virtual node in this node or its parents."""
-        if isinstance(name_or_path, str):
-            name_or_path = (name_or_path,)
-        else:
-            name_or_path = tuple(name_or_path)
+        return _best_match(
+            self, name_or_path, self._find_all_virtual(name_or_path, with_alias)
+        )
 
-        anchor = self
-        while len(name_or_path) > 1:
-            head, *name_or_path = name_or_path
-            anchor = anchor._find_primary(head)
+    @fill_in_doc(_doc_fields)
+    def find_any_node(
+        self, name_or_path: Union[str, Sequence[str]], with_alias=False
+    ) -> BaseNode:
+        """
+        Find any node (primary, tag or virtual) in relation to self.
 
-        name = name_or_path[0]  # type: ignore
+        Args:
+            names (iterable of str): ...
+            {with_alias_arg}
 
-        for virtual in self.get_applicable_virtuals():
-            if virtual.name.casefold() == name.casefold():
-                return virtual
+        Returns:
+            PolyDescription: The parsed PolyDescription.
+        """
 
-        raise NodeNotFoundError(name)
+        name_or_path = _validate_name_or_path(name_or_path)
+
+        if not with_alias:
+            try:
+                return self.find_primary(name_or_path)
+            except NodeNotFoundError:
+                pass
+
+            try:
+                return self.find_tag(name_or_path)
+            except NodeNotFoundError:
+                pass
+
+            try:
+                return self.find_virtual(name_or_path)
+            except NodeNotFoundError:
+                pass
+
+            raise NodeNotFoundError(
+                f"Could not find {name_or_path} below {quote(self.format())}"
+            )
+
+        # Find all matching nodes
+        matches = []
+        matches.extend(self._find_all_primary(name_or_path, with_alias=with_alias))
+        matches.extend(self._find_all_tag(name_or_path, with_alias=with_alias))
+        matches.extend(self._find_all_virtual(name_or_path, with_alias=with_alias))
+
+        print(f"matches for {name_or_path}", matches)
+
+        # Sort matches by specificy
+        return _best_match(self, name_or_path, matches)
 
     def format_tree(self, extra=None, virtuals=False) -> str:
         """Format the PrimaryNode and its children as a tree."""
@@ -637,107 +786,30 @@ class PrimaryNode(RealNode):
         return "\n".join(lines)
 
     def find_real_node(
-        self, name_or_path: Union[str, Iterable[str]], with_alias=False
+        self, name_or_path: Union[str, Sequence[str]], with_alias=False
     ) -> Union["PrimaryNode", "TagNode"]:
         """Find a real node (PrimaryNode or TagNode) by name or path."""
-        try:
-            return self.find_primary(name_or_path, with_alias)
-        except NodeNotFoundError:
-            pass
+        if not with_alias:
+            try:
+                return self.find_primary(name_or_path)
+            except NodeNotFoundError:
+                pass
 
-        return self.find_tag(name_or_path)
+            try:
+                return self.find_tag(name_or_path)
+            except NodeNotFoundError:
+                pass
 
-    def get_description(
-        self,
-        descriptors: Iterable[Union[str, Iterable[str]]],
-        ignore_missing_intermediaries=False,
-        with_alias=False,
-        on_conflict: Literal["replace", "raise"] = "replace",
-    ) -> "Description":
-        """
-        Get a PolyDescription from a list of descriptors.
-
-        Args:
-            descriptors (Iterable[Union[str, Iterable[str]]]): The descriptors to parse.
-            ignore_missing_intermediaries (bool, optional): Whether to ignore missing intermediaries. Defaults to False.
-            with_alias (bool, optional): Whether to consider aliases. Defaults to False.
-            on_conflict (Literal["replace", "raise"], optional): Conflict resolution strategy. Defaults to "replace".
-
-        Returns:
-            PolyDescription: The parsed PolyDescription.
-        """
-        # Turn into tuple
-        descriptors = tuple(descriptors)
-
-        def process_descriptors(
-            description: "Description", descriptors: Sequence, with_alias
-        ):
-            unmatched_parts = []
-
-            # Requires descriptors to be a sequence
-            while descriptors:
-                head, *descriptors = descriptors
-
-                if head and head[0] == "!":
-                    negate = True
-                    head = head[1:]
-                else:
-                    negate = False
-
-                try:
-                    node = description.anchor.find_real_node(head, with_alias)
-                except NodeNotFoundError:
-                    pass
-                else:
-                    if not unmatched_parts or isinstance(node, PrimaryNode):
-                        description.add(node.negate(negate), on_conflict=on_conflict)
-
-                        if unmatched_parts and not ignore_missing_intermediaries:
-                            raise ValueError(
-                                f"Unmatched parts {unmatched_parts} before current {head}"
-                            )
-
-                        # Reset unmatched parts
-                        unmatched_parts.clear()
-                        continue
-                    # else:
-                    # If a TagNode is found but there are unmatched_parts: Treat as not found
-
-                try:
-                    virtual = description.anchor.find_virtual(head)
-                except NodeNotFoundError:
-                    pass
-                else:
-                    description.add(virtual.description, on_conflict=on_conflict)
-
-                    if unmatched_parts and not ignore_missing_intermediaries:
-                        raise ValueError(f"Unmatched parts: {unmatched_parts}")
-
-                    # Reset unmatched parts
-                    unmatched_parts.clear()
-                    continue
-
-                unmatched_parts.append(head)
-            return description, unmatched_parts
-
-        description, unmatched_parts = process_descriptors(
-            Description(self), descriptors, False
-        )
-
-        if unmatched_parts and with_alias:
-            description, unmatched_parts = process_descriptors(
-                description, unmatched_parts, True
-            )
-
-        if unmatched_parts:
-            raise ValueError(f"Unmatched suffix: {unmatched_parts}")
-
-        return description
+            raise NodeNotFoundError(f"{name_or_path} (anchor={quote(self.format())})")
+        else:
+            matches = []
+            matches.extend(self._find_all_primary(name_or_path, with_alias=with_alias))
+            matches.extend(self._find_all_tag(name_or_path, with_alias=with_alias))
+            return _best_match(self, name_or_path, matches)
 
     def parse_description(
         self,
         description: str,
-        ignore_missing_intermediaries=False,
         with_alias=False,
         on_conflict: Literal["replace", "raise"] = "replace",
     ):
@@ -746,16 +818,18 @@ class PrimaryNode(RealNode):
 
         Args:
             description (str): The description string to parse.
-            ignore_missing_intermediaries (bool, optional): Whether to ignore missing intermediaries. Defaults to False.
             with_alias (bool, optional): Whether to consider aliases. Defaults to False.
-            on_conflict (Literal["replace", "raise"], optional): Conflict resolution strategy. Defaults to "replace".
+            {on_conflict_arg}
 
         Returns:
             PolyDescription: The parsed PolyDescription.
         """
-        descriptors = _tokenize_expression_str(description)
-        return self.get_description(
-            descriptors, ignore_missing_intermediaries, with_alias, on_conflict
+
+        return Description.from_string(
+            self,
+            description,
+            with_alias=with_alias,
+            on_conflict=on_conflict,
         )
 
     def union(self, other: "PrimaryNode"):
@@ -788,11 +862,8 @@ class PrimaryNode(RealNode):
         return super().negate(negate)
 
     def __le__(self, other) -> bool:
-        if isinstance(other, PrimaryNode):
+        if isinstance(other, (TagNode, PrimaryNode)):
             return self in other.precursors
-
-        if isinstance(other, TagNode):
-            return False
 
         if isinstance(other, NegatedRealNode):
             return False
@@ -823,13 +894,113 @@ class Description:
         if qualifiers is not None:
             self.update(qualifiers, on_conflict="raise")
 
+    def _parse_description_tokens(
+        self,
+        tokens: Iterator,
+        with_alias: bool,
+        on_conflict: TOnConflictLiteral,
+    ) -> List[Descriptor]:
+        negate = False
+        descriptors: List[Descriptor] = []
+
+        while True:
+            try:
+                token = next(tokens)
+            except StopIteration:
+                return descriptors
+            if token == "!":
+                negate = not negate
+                continue
+            elif isinstance(token, tuple):
+                # We have a tuple of names, let's find the corresponding node
+                node = self.anchor.find_real_node(token, with_alias=with_alias)
+                d = node.negate(negate)
+                descriptors.append(d)
+                self.add(d, on_conflict=on_conflict)
+                negate = False
+            else:
+                raise ValueError(f"Unexpected token in description: {token!r}")
+
+    @fill_in_doc(_doc_fields)
+    @staticmethod
+    def from_string(
+        anchor: PrimaryNode,
+        description_str: str,
+        with_alias=False,
+        on_conflict: TOnConflictLiteral = "replace",
+    ) -> "Description":
+        """
+        Parse a textual description into a Description object.
+
+        Args:
+            {anchor_arg}
+        """
+        tokens = iter(tokenize(description_str))
+        d = Description(anchor)
+        d._parse_description_tokens(
+            tokens,
+            with_alias=with_alias,
+            on_conflict=on_conflict,
+        )
+        return d
+
+    @fill_in_doc(_doc_fields)
+    @staticmethod
+    def from_lineage(
+        anchor: PrimaryNode,
+        names: Iterable[str],
+        with_alias=False,
+        on_conflict: TOnConflictLiteral = "replace",
+        ignore_unmatched_intermediaries=False,
+    ) -> "Description":
+        """
+        Parse a sequence of names into a Description object.
+
+        Args:
+            {anchor_arg}
+            names (iterable of str): ...
+            {with_alias_arg}
+            {on_conflict_arg}
+            {ignore_unmatched_intermediaries_arg}
+
+        Returns:
+            PolyDescription: The parsed PolyDescription.
+        """
+
+        description = Description(anchor)
+
+        unmatched_names = []
+
+        for name in names:
+            try:
+                node = description.anchor.find_any_node(name, with_alias)
+            except NodeNotFoundError:
+                if ignore_unmatched_intermediaries:
+                    unmatched_names.append(name)
+                    continue
+                raise
+
+            unmatched_names.clear()
+
+            if isinstance(node, Descriptor):
+                description.add(node, on_conflict=on_conflict)
+            elif isinstance(node, VirtualNode):
+                description.add(node.description, on_conflict=on_conflict)
+            else:
+                raise ValueError(f"Unexpected node: {node}")
+
+        if unmatched_names:
+            raise ValueError(f"Unmatched suffix: {'/'.join(unmatched_names)}")
+
+        return description
+
     @property
     def descriptors(self) -> Sequence[Descriptor]:
-        """Return all descriptors including the anchor and qualifiers."""
+        """Return all descriptors (anchor + qualifiers)."""
         return [self.anchor] + self.qualifiers
 
     def to_binary_raw(self) -> Mapping["RealNode", bool]:
-        """Convert the description to a binary representation with nodes and their active state."""
+        """Convert the description to a binary representation of nodes and their active state."""
         map: Mapping[RealNode, bool] = {}
 
         def handle_positive(node: RealNode):
@@ -905,7 +1076,7 @@ class Description:
         on_conflict: TOnConflictLiteral,
     ):
         if self.anchor <= other:
-            # anchor is empty or more general than other: replace
+            # anchor more general than other: replace
             self.anchor = other
             return
 
@@ -932,8 +1103,7 @@ class Description:
             return
 
         # Add primary parent of tag
-        if other.primary_parent is not None:
-            self._add_primary(other.primary_parent, on_conflict=on_conflict)
+        self._add_primary(other.primary_parent, on_conflict=on_conflict)
 
         # Remove existing qualifiers that are implied by `other`
         qualifiers = [q for q in self.qualifiers if not (q <= other)]
@@ -1047,20 +1217,19 @@ class Description:
 
         return self
 
-    def _remove_poly_description(self, other: "Description"):
+    def _remove_description(self, other: "Description"):
         for descriptor in other.descriptors:
             self.remove(descriptor)
 
-    def _remove_primary(self, other: "PrimaryNode"):
+    def _remove_descriptor(self, other: Descriptor):
+        # Replace qualifiers that imply "other" with their nearest ancestor that does not imply "other"
+
         if other <= self.anchor:
             # Delete the precluded portion of the anchor
             if other.parent is None:
                 raise ValueError("Cannot remove root")
 
             self.anchor = other.parent
-
-    def _remove_qualifier(self, other: Descriptor):
-        # Replace qualifiers that imply "other" with their nearest ancestor that does not imply "other"
 
         new_qualifiers = []
 
@@ -1084,18 +1253,23 @@ class Description:
     def remove(self, other: Union["Description", Descriptor]):
         """Remove a descriptor or poly description from the current description."""
         if isinstance(other, Description):
-            self._remove_poly_description(other)
-
-        elif isinstance(other, PrimaryNode):
-            self._remove_primary(other)
+            self._remove_description(other)
 
         elif isinstance(other, Descriptor):
-            self._remove_qualifier(other)
+            self._remove_descriptor(other)
 
         else:
             raise ValueError(f"Unexpected type of other: {type(other)}")
 
         return self
+
+    def format(self, anchor: PrimaryNode | None = None):
+        # Sort qualifiers alphabetically for stable lookup
+        qualifiers = sorted(
+            [q.format(anchor=self.anchor, quoted=True) for q in self.qualifiers]
+        )
+
+        return " ".join([self.anchor.format(anchor, quoted=True)] + qualifiers)
 
     def __le__(self, other) -> bool:
         if not isinstance(other, Description):
@@ -1120,7 +1294,4 @@ class Description:
         return f"<{self.__class__.__name__} {self!s}>"
 
     def __str__(self) -> str:
-        # Sort qualifiers alphabetically for stable lookup
-        qualifiers = sorted([q.format(anchor=self.anchor) for q in self.qualifiers])
-
-        return shlex.join([str(self.anchor)] + qualifiers)
+        return self.format()

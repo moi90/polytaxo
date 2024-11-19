@@ -1,10 +1,9 @@
 import operator as op
-import shlex
 from collections import defaultdict
-from typing import Iterable, Literal, Mapping, Optional, Sequence, Union
+from typing import Iterable, Mapping, Optional, Sequence, Union
 
 from .descriptor import Descriptor
-from .parser import _tokenize_expression_str
+from .parser import tokenize
 from .core import (
     IndexProvider,
     Description,
@@ -12,7 +11,9 @@ from .core import (
     RealNode,
     TagNode,
     TOnConflictLiteral,
+    fill_in_doc,
 )
+from .core import _doc_fields as _core_doc_fields
 
 
 class Expression:
@@ -31,6 +32,129 @@ class Expression:
     ):
         self.include = include
         self.exclude = exclude
+
+    @fill_in_doc(_core_doc_fields)
+    @staticmethod
+    def from_string(
+        anchor: PrimaryNode,
+        expression_str: str,
+        with_alias=False,
+        on_conflict: TOnConflictLiteral = "replace",
+    ) -> "Expression":
+        """
+        Parse an expression string into an `Expression` object.
+
+        Args:
+            {anchor_arg}
+            expression_str (str): The expression string containing including and excluding descriptors.
+            with_alias (bool, optional): Whether to consider aliases in matching nodes.
+                Defaults to False.
+            on_conflict ('replace', 'raise', or 'skip', optional): Strategy for handling conflicts.
+                Defaults to "replace".
+
+        Returns:
+            Expression: An `Expression` object with the parsed include and exclude descriptors.
+
+        Raises:
+            ValueError: If an unexpected token or state is encountered in the expression string.
+        """
+
+        include = Description(anchor)
+        exclude: List[Descriptor] = []
+
+        tokens = iter(tokenize(expression_str))
+
+        NEUTRAL = 0
+        IN_INCLUDED_PARENTHESIS = 1
+        EXCLUDE = 2
+        IN_EXCLUDED_PARENTHESIS = 3
+
+        state = NEUTRAL
+        description_tokens = []
+        while True:
+            token = next(tokens, None)
+
+            if state == NEUTRAL:
+                if token == "(":
+                    state = IN_INCLUDED_PARENTHESIS
+                    continue
+                elif isinstance(token, tuple) or token == "!":
+                    description_tokens.append(token)
+                    continue
+                elif token is None:
+                    # Flush current description
+                    if description_tokens:
+                        include._parse_description_tokens(
+                            iter(description_tokens),
+                            with_alias=with_alias,
+                            on_conflict=on_conflict,
+                        )
+                        description_tokens = []
+                    break
+                elif token == "-":
+                    # Flush currently saved description
+                    if description_tokens:
+                        include._parse_description_tokens(
+                            iter(description_tokens),
+                            with_alias=with_alias,
+                            on_conflict=on_conflict,
+                        )
+                        description_tokens = []
+                    state = EXCLUDE
+                    continue
+                else:
+                    raise ValueError(f"Unexpected token: {token} (state={state})")
+            elif state == EXCLUDE:
+                if token == "(":
+                    state = IN_EXCLUDED_PARENTHESIS
+                    continue
+                elif isinstance(token, tuple) or token == "!":
+                    description_tokens.append(token)
+                    continue
+                elif token is None:
+                    # Flush current description: Extend `exclude` with individual descriptors
+                    exclude.extend(
+                        Description(include.anchor)._parse_description_tokens(
+                            iter(description_tokens),
+                            with_alias=with_alias,
+                            on_conflict=on_conflict,
+                        )
+                    )
+                    description_tokens = []
+                    state = NEUTRAL
+                    continue
+                else:
+                    raise ValueError(f"Unexpected token: {token} (state={state})")
+            elif state == IN_INCLUDED_PARENTHESIS:
+                if token == ")":
+                    raise NotImplementedError()
+                    state = NEUTRAL
+                    continue
+                else:
+                    raise ValueError(f"Unexpected token: {token}")
+            elif state == IN_EXCLUDED_PARENTHESIS:
+                if isinstance(token, tuple) or token == "!":
+                    description_tokens.append(token)
+                elif token == ")":
+                    # Flush
+                    if description_tokens:
+                        # Append complete description to `exclude`
+                        d = Description(include.anchor)
+                        d._parse_description_tokens(
+                            iter(description_tokens),
+                            with_alias=with_alias,
+                            on_conflict=on_conflict,
+                        )
+                        exclude.append(d)
+                        description_tokens = []
+                    state = NEUTRAL
+                    continue
+                else:
+                    raise ValueError(f"Unexpected token: {token} (state={state})")
+            else:
+                raise ValueError(f"Unexpected state: {state}")
+
+        return Expression(include, exclude)
 
     def match(self, description: Description) -> bool:
         """
@@ -91,13 +215,19 @@ class Expression:
         return f"<{self.__class__.__name__}(include={self.include!r}, exclude={self.exclude!r})>"
 
     def __str__(self) -> str:
+        if not self.exclude:
+            return str(self.include)
+
         exclude = []
         for excl in self.exclude:
-            if isinstance(excl, Descriptor):
+            if isinstance(excl, Description):
+                exclude.append(f"-({excl.format(self.include.anchor)})")
+            elif isinstance(excl, Descriptor):
                 exclude.append(f"-{excl.format(self.include.anchor)}")
             else:
-                exclude.append(f"-({excl})")
-        return str(self.include) + " " + shlex.join(exclude)
+                raise ValueError(f"Unexpected exclusion clause {excl!r}")
+
+        return str(self.include) + " " + " ".join(exclude)
 
 
 class PolyTaxonomy:
@@ -119,79 +249,91 @@ class PolyTaxonomy:
 
         return cls(root)
 
+    @classmethod
+    def from_yaml(cls, yaml_fn):
+        """Create a PolyTaxonomy from a YAML file."""
+        import yaml
+
+        with open(yaml_fn) as f:
+            return cls.from_dict(yaml.safe_load(f))
+
     def to_dict(self) -> Mapping:
         """Convert the PolyTaxonomy to a dictionary representation."""
         return {self.root.name: self.root.to_dict()}
 
-    def get_description(
-        self,
-        descriptors: Iterable[Union[str, Iterable[str]]],
-        ignore_missing_intermediaries=False,
-        with_alias=False,
-        on_conflict: Literal["replace", "raise"] = "replace",
-    ) -> Description:
-        """
-        Get a PolyDescription from a list of descriptors.
-
-        Args:
-            descriptors (Iterable[Union[str, Iterable[str]]]): The descriptors to parse.
-            ignore_missing_intermediaries (bool, optional): Whether to ignore missing intermediaries. Defaults to False.
-            with_alias (bool, optional): Whether to consider aliases. Defaults to False.
-            on_conflict (Literal["replace", "raise"], optional): Conflict resolution strategy. Defaults to "replace".
-
-        Returns:
-            PolyDescription: The parsed PolyDescription.
-        """
-        return self.root.get_description(
-            descriptors, ignore_missing_intermediaries, with_alias, on_conflict
-        )
-
     def parse_description(
         self,
         description: str,
-        ignore_missing_intermediaries=False,
         with_alias=False,
-        on_conflict: Literal["replace", "raise"] = "replace",
+        on_conflict: TOnConflictLiteral = "replace",
     ) -> Description:
         """
         Parse a description string into a PolyDescription.
 
         Args:
             description (str): The description string to parse.
-            ignore_missing_intermediaries (bool, optional): Whether to ignore missing intermediaries. Defaults to False.
             with_alias (bool, optional): Whether to consider aliases. Defaults to False.
-            on_conflict (Literal["replace", "raise"], optional): Conflict resolution strategy. Defaults to "replace".
+            on_conflict ("replace", "raise", or "skip", optional): Conflict resolution strategy. Defaults to "replace".
 
         Returns:
             PolyDescription: The parsed PolyDescription.
         """
-        return self.root.parse_description(
-            description, ignore_missing_intermediaries, with_alias, on_conflict
+
+        return Description.from_string(
+            self.root,
+            description,
+            with_alias=with_alias,
+            on_conflict=on_conflict,
         )
 
     def parse_expression(self, expression_str: str) -> Expression:
-        """Parse an expression string into an Expression object."""
-        include = []
-        exclude = []
-        for part in _tokenize_expression_str(expression_str):
-            if part and part[0] == "-":
-                exclude.append(part[1:])
-            else:
-                include.append(part)
+        """
+        Parse an expression string into an `Expression` object.
 
-        include_dsc = self.get_description(include)
+        Args:
+            expression_str (str): The expression string containing including and excluding descriptors.
+            with_alias (bool, optional): Whether to consider aliases in matching nodes.
+                Defaults to False.
+            on_conflict ("replace", "raise", or "skip", optional): Strategy for handling conflicts.
+                Defaults to "replace".
 
-        exclude_descriptors = [
-            include_dsc.anchor.get_description([e]).descriptors[-1] for e in exclude
-        ]
+        Returns:
+            Expression: An `Expression` object with the parsed include and exclude descriptors.
 
-        return Expression(include_dsc, exclude_descriptors)
+        Raises:
+            ValueError: If an unexpected token or state is encountered in the expression string.
+        """
 
-    def get_node(self, node_name):
-        """Get a node by name."""
-        (path,) = _tokenize_expression_str(node_name)
+        return Expression.from_string(self.root, expression_str)
 
-        return self.root.find_real_node(path)
+    @fill_in_doc(_core_doc_fields)
+    def parse_lineage(
+        self,
+        names: Iterable[str],
+        with_alias=False,
+        on_conflict: TOnConflictLiteral = "replace",
+        ignore_unmatched_intermediaries=False,
+    ) -> Description:
+        """
+        Parse a sequence of names into a PolyDescription.
+
+        Args:
+            names (iterable of str): ...
+            {with_alias_arg}
+            {on_conflict_arg}
+            {ignore_unmatched_intermediaries_arg}
+
+        Returns:
+            PolyDescription: The parsed PolyDescription.
+        """
+
+        return Description.from_lineage(
+            self.root,
+            names,
+            ignore_unmatched_intermediaries=ignore_unmatched_intermediaries,
+            with_alias=with_alias,
+            on_conflict=on_conflict,
+        )
 
     def fill_indices(self):
         """Fill indices for all nodes in the taxonomy."""
