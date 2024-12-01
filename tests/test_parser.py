@@ -11,10 +11,10 @@ from hypothesis.strategies import (
 from polytaxo.core import Description, NegatedRealNode, PrimaryNode, TagNode
 from polytaxo.descriptor import Descriptor
 from polytaxo.parser import quote, tokenize
-from polytaxo.taxonomy import Expression, PolyTaxonomy
+from polytaxo.taxonomy import Expression, Taxonomy
 from tests.data import taxonomy_dict
 
-taxonomy = PolyTaxonomy.from_dict(taxonomy_dict)
+taxonomy = Taxonomy.from_dict(taxonomy_dict)
 
 
 def format_descriptor_quoted(d: Descriptor, anchor=None, quote_chars="'\"") -> str:

@@ -8,3 +8,4 @@ coverage.xml
 .venv/
 experiments/
 .hypothesis/
+docs/_build

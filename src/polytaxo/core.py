@@ -718,7 +718,7 @@ class PrimaryNode(RealNode):
             {with_alias_arg}
 
         Returns:
-            PolyDescription: The parsed PolyDescription.
+            Description: The parsed Description.
         """
 
         name_or_path = _validate_name_or_path(name_or_path)
@@ -814,7 +814,7 @@ class PrimaryNode(RealNode):
         on_conflict: Literal["replace", "raise"] = "replace",
     ):
         """
-        Parse a description string into a PolyDescription.
+        Parse a description string into a Description.
 
         Args:
             description (str): The description string to parse.
@@ -822,7 +822,7 @@ class PrimaryNode(RealNode):
             {on_conflict_arg}
 
         Returns:
-            PolyDescription: The parsed PolyDescription.
+            Description: The parsed Description.
         """
 
         return Description.from_string(
@@ -880,8 +880,15 @@ class ConflictError(Exception):
     pass
 
 
+@fill_in_doc(_doc_fields)
 class Description:
-    """Represents a polyhierarchical description."""
+    """
+    Represents a PolyTaxo description.
+
+    Args:
+        {anchor_arg}
+        qualifiers (Iterable[Descriptor], optional): Additional parts of the description.
+    """
 
     def __init__(
         self,
@@ -921,8 +928,8 @@ class Description:
             else:
                 raise ValueError(f"Unexpected token in description: {token!r}")
 
-    @fill_in_doc(_doc_fields)
     @staticmethod
+    @fill_in_doc(_doc_fields)
     def from_string(
         anchor: PrimaryNode,
         description_str: str,
@@ -944,8 +951,8 @@ class Description:
         )
         return d
 
-    @fill_in_doc(_doc_fields)
     @staticmethod
+    @fill_in_doc(_doc_fields)
     def from_lineage(
         anchor: PrimaryNode,
         names: Iterable[str],
@@ -964,7 +971,7 @@ class Description:
             {ignore_unmatched_intermediaries_arg}
 
         Returns:
-            PolyDescription: The parsed PolyDescription.
+            Description: The parsed Description.
         """
 
         description = Description(anchor)
@@ -1057,7 +1064,7 @@ class Description:
         return [int_map.get(i, fill_na) for i in range(n_labels)]
 
     def copy(self) -> "Description":
-        """Create a copy of the current PolyDescription."""
+        """Create a copy of the current Description."""
         return Description(self.anchor, self.qualifiers)
 
     def _add_poly_description(
@@ -1178,7 +1185,7 @@ class Description:
         other: Union["Description", Descriptor],
         on_conflict: TOnConflictLiteral = "replace",
     ) -> "Description":
-        """Add a descriptor or poly description to the current description."""
+        """Add a descriptor or description to the current description."""
         if on_conflict not in ("replace", "raise", "skip"):
             raise ValueError(f"Unexpected value for on_conflict: {on_conflict}")
 
@@ -1251,7 +1258,7 @@ class Description:
         self.qualifiers = new_qualifiers
 
     def remove(self, other: Union["Description", Descriptor]):
-        """Remove a descriptor or poly description from the current description."""
+        """Remove a descriptor or description from the current description."""
         if isinstance(other, Description):
             self._remove_description(other)
 

@@ -2,7 +2,7 @@ import pytest
 
 from polytaxo import (
     ConflictError,
-    PolyTaxonomy,
+    Taxonomy,
     TagNode,
     NodeNotFoundError,
 )
@@ -11,15 +11,15 @@ from polytaxo.core import Description, NeverDescriptor
 
 
 def test_poly_taxonomy():
-    # A concrete example of a polytaxonomy
-    poly_taxonomy = PolyTaxonomy.from_dict(taxonomy_dict)
+    # A concrete example of a Taxonomy
+    poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
 
     assert poly_taxonomy.root.name == ""
     poly_taxonomy.root.find_primary(("", "Copepoda"))
     poly_taxonomy.root.find_real_node(("", "Copepoda"))
 
     # Test roundtripping
-    assert PolyTaxonomy.from_dict(poly_taxonomy.to_dict()) == poly_taxonomy
+    assert Taxonomy.from_dict(poly_taxonomy.to_dict()) == poly_taxonomy
 
     # Get a certain description
     Calanus_male_lateral = poly_taxonomy.parse_description(
@@ -139,7 +139,7 @@ def test_poly_taxonomy():
     # result = not_lateral.apply(Calanus_male_lateral.copy())
     # assert result == poly_taxonomy.parse_description("Calanus sex:male")
 
-    # Test PolyDescription.remove
+    # Test Description.remove
     lateral_left = poly_taxonomy.parse_description("Copepoda lateral:left").qualifiers[
         0
     ]
@@ -155,8 +155,8 @@ def test_poly_taxonomy():
 
 # @pytest.mark.xfail(reason="TODO: Implement hierarchy parsing")
 def test_parse_lineage():
-    # A concrete example of a polytaxonomy
-    poly_taxonomy = PolyTaxonomy.from_dict(taxonomy_dict)
+    # A concrete example of a Taxonomy
+    poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
 
     Calanus_male_lateral = poly_taxonomy.parse_description(
         "Copepoda/Calanus sex:male view:lateral"
@@ -208,8 +208,8 @@ def test_parse_lineage():
 
 
 def test_description_conflicts():
-    # A concrete example of a polytaxonomy
-    poly_taxonomy = PolyTaxonomy.from_dict(taxonomy_dict)
+    # A concrete example of a Taxonomy
+    poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
 
     # Update positive tag with negative version
     Copepoda_frontal = poly_taxonomy.parse_description("Copepoda view:frontal")
@@ -261,8 +261,8 @@ def test_description_conflicts():
 
 
 def test_poly_taxonomy_binary():
-    # A concrete example of a polytaxonomy
-    poly_taxonomy = PolyTaxonomy.from_dict(taxonomy_dict)
+    # A concrete example of a Taxonomy
+    poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
 
     poly_taxonomy.fill_indices()
     poly_taxonomy.print_tree()

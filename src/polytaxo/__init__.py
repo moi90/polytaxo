@@ -9,13 +9,13 @@ from .core import (
     VirtualNode,
 )
 from .descriptor import Descriptor, NeverDescriptor
-from .taxonomy import Expression, PolyTaxonomy
+from .taxonomy import Expression, Taxonomy
 
 __all__ = [
     "ConflictError",
     "Description",
     "Descriptor",
-    "PolyTaxonomy",
+    "Taxonomy",
     "Expression",
     "IndexProvider",
     "NegatedRealNode",

@@ -18,11 +18,11 @@ from .core import _doc_fields as _core_doc_fields
 
 class Expression:
     """
-    A class representing an expression for matching and modifying PolyDescription objects.
+    A class representing an expression for matching and modifying Description objects.
 
     Args:
-        include (PolyDescription): A description to add / include in matches.
-        exclude (List[PolyDescription]): A list of descriptions to remove / exclude from matches.
+        include (Description): A description to add / include in matches.
+        exclude (List[Description]): A list of descriptions to remove / exclude from matches.
     """
 
     def __init__(
@@ -108,10 +108,11 @@ class Expression:
                 if token == "(":
                     state = IN_EXCLUDED_PARENTHESIS
                     continue
-                elif isinstance(token, tuple) or token == "!":
+                elif token == "!":
                     description_tokens.append(token)
                     continue
-                elif token is None:
+                elif isinstance(token, tuple):
+                    description_tokens.append(token)
                     # Flush current description: Extend `exclude` with individual descriptors
                     exclude.extend(
                         Description(include.anchor)._parse_description_tokens(
@@ -158,7 +159,7 @@ class Expression:
 
     def match(self, description: Description) -> bool:
         """
-        Check if a given PolyDescription matches the expression.
+        Check if a given Description matches the expression.
 
         A matches if A <= description
         !A matches if !A <= description
@@ -166,7 +167,7 @@ class Expression:
         -!A matches if not (!A <= description)
 
         Args:
-            description (PolyDescription): The description to match.
+            description (Description): The description to match.
 
         Returns:
             bool: True if the description matches, False otherwise.
@@ -186,17 +187,17 @@ class Expression:
         on_conflict: TOnConflictLiteral = "replace",
     ) -> Description:
         """
-        Apply the expression (in-place) to the given PolyDescription.
+        Apply the expression (in-place) to the given Description.
 
         A/!A: A/!A is added to the description.
         -A/-!A: A/!A is removed from the description.
 
         Args:
-            description (PolyDescription): The description to modify.
+            description (Description): The description to modify.
             on_conflict ("replace", "raise" or "skip", optional): Conflict resolution strategy. Defaults to "replace".
 
         Returns:
-            PolyDescription: The modified PolyDescription.
+            Description: The modified Description.
         """
         description.add(self.include, on_conflict)
 
@@ -230,8 +231,8 @@ class Expression:
         return str(self.include) + " " + " ".join(exclude)
 
 
-class PolyTaxonomy:
-    """Taxonomy with multiple roots."""
+class Taxonomy:
+    """Taxonomy consisting of primary nodes and tag nodes."""
 
     def __init__(self, root: PrimaryNode) -> None:
         self.root = root
@@ -268,7 +269,7 @@ class PolyTaxonomy:
         on_conflict: TOnConflictLiteral = "replace",
     ) -> Description:
         """
-        Parse a description string into a PolyDescription.
+        Parse a description string into a Description.
 
         Args:
             description (str): The description string to parse.
@@ -276,7 +277,7 @@ class PolyTaxonomy:
             on_conflict ("replace", "raise", or "skip", optional): Conflict resolution strategy. Defaults to "replace".
 
         Returns:
-            PolyDescription: The parsed PolyDescription.
+            Description: The parsed Description.
         """
 
         return Description.from_string(
@@ -315,7 +316,7 @@ class PolyTaxonomy:
         ignore_unmatched_intermediaries=False,
     ) -> Description:
         """
-        Parse a sequence of names into a PolyDescription.
+        Parse a sequence of names into a Description.
 
         Args:
             names (iterable of str): ...
@@ -324,7 +325,7 @@ class PolyTaxonomy:
             {ignore_unmatched_intermediaries_arg}
 
         Returns:
-            PolyDescription: The parsed PolyDescription.
+            Description: The parsed Description.
         """
 
         return Description.from_lineage(
@@ -376,13 +377,13 @@ class PolyTaxonomy:
 
         Args:
             probabilities (Union[Mapping[int, float], Sequence[float]]): The probability scores for the nodes.
-            baseline (Optional[PolyDescription], optional): The baseline description. Defaults to None.
+            baseline (Optional[Description], optional): The baseline description. Defaults to None.
             thr_pos_abs (float, optional): The absolute positive threshold. Defaults to 0.9.
             thr_pos_rel (float, optional): The relative positive threshold. Defaults to 0.25.
             thr_neg (float, optional): The negative threshold. Defaults to 0.1.
 
         Returns:
-            PolyDescription: The resulting description.
+            Description: The resulting description.
         """
         if isinstance(probabilities, Mapping):
             probabilities = defaultdict(lambda: 0.5, probabilities)
@@ -477,7 +478,7 @@ class PolyTaxonomy:
         return description
 
     def __eq__(self, other) -> bool:
-        if not isinstance(other, PolyTaxonomy):
+        if not isinstance(other, Taxonomy):
             return NotImplemented
 
         return self.root == other.root
