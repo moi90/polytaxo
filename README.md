@@ -1,5 +1,10 @@
 # PolyTaxo
 
+<p align="center" width="100%">
+    <img width="15%" src="docs/transparent-128.png"> 
+</p>
+
+
 ## Overview
 
 The `PolyTaxo` library is a versatile hierarchical classification system designed to handle complex, polyhierarchical descriptions.
