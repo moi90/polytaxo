@@ -1,3 +1,4 @@
+from typing import List, Tuple
 from hypothesis import given
 from hypothesis.strategies import (
     DrawFn,
@@ -146,3 +147,26 @@ def test_parse_expression_complex(expression_formatted):
     assert (
         expression == expression2
     ), f"<{expression}> vs. <{expression2}>, {tokenize(expression_str)}"
+
+
+@given(lists(description_formatted(taxonomy.root), min_size=4))
+def test_tokenize_parallel(descriptions_formatted: List[Tuple[Description, str]]):
+    """
+    Test that the tokenizer does work in parallel.
+    """
+
+    descriptions, description_strs = zip(*descriptions_formatted)
+
+    from multiprocessing.pool import ThreadPool
+
+    with ThreadPool(len(descriptions)) as pool:
+        descriptions2 = tuple(
+            pool.map(
+                lambda description_str: Description.from_string(
+                    taxonomy.root, description_str
+                ),
+                description_strs,
+            )
+        )
+
+    assert descriptions == descriptions2
