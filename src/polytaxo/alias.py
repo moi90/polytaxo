@@ -1,5 +1,4 @@
 import fnmatch
-import functools
 import re
 
 # *       matches everything
@@ -18,13 +17,13 @@ def calc_specificy(pattern: str):
 
 class Alias:
     def __init__(self, pattern: str) -> None:
-        self.pattern = pattern.lower()
+        self.pattern = pattern.casefold()
         self._match = re.compile(fnmatch.translate(self.pattern)).match
         self.specificy = calc_specificy(self.pattern)
 
     def match(self, name: str) -> int:
         """Test whether `name` matches `pattern` and return specificy."""
-        name = name.lower()
+        name = name.casefold()
         if self._match(name):
             return self.specificy
         return 0
