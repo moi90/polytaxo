@@ -4,7 +4,7 @@ from .core import (
     IndexProvider,
     NegatedRealNode,
     NodeNotFoundError,
-    PrimaryNode,
+    ClassNode,
     TagNode,
     VirtualNode,
 )
@@ -21,7 +21,7 @@ __all__ = [
     "NegatedRealNode",
     "NeverDescriptor",
     "NodeNotFoundError",
-    "PrimaryNode",
+    "ClassNode",
     "TagNode",
     "VirtualNode",
 ]

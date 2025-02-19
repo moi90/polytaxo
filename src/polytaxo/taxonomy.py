@@ -1,13 +1,23 @@
 import operator as op
 from collections import defaultdict
-from typing import Iterable, Mapping, Optional, Sequence, Union
+from typing import (
+    Iterable,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    overload,
+)
 
 from .descriptor import Descriptor
 from .parser import tokenize
 from .core import (
     IndexProvider,
     Description,
-    PrimaryNode,
+    ClassNode,
     RealNode,
     TagNode,
     TOnConflictLiteral,
@@ -36,7 +46,7 @@ class Expression:
     @fill_in_doc(_core_doc_fields)
     @staticmethod
     def from_string(
-        anchor: PrimaryNode,
+        anchor: ClassNode,
         expression_str: str,
         with_alias=False,
         on_conflict: TOnConflictLiteral = "replace",
@@ -234,19 +244,14 @@ class Expression:
 class Taxonomy:
     """Taxonomy consisting of primary nodes and tag nodes."""
 
-    def __init__(self, root: PrimaryNode) -> None:
+    def __init__(self, root: ClassNode) -> None:
         self.root = root
 
     @classmethod
     def from_dict(cls, tree_dict: Mapping):
         """Create a PolyTaxonomy from a dictionary representation."""
-        # Ensure single node
-        (key, data), *remainder = list(tree_dict.items())
 
-        if remainder:
-            raise ValueError("Only one root node is allowed")
-
-        root = PrimaryNode.from_dict(key, data, None)
+        root = ClassNode.from_dict("", tree_dict, None)
 
         return cls(root)
 
@@ -307,14 +312,38 @@ class Taxonomy:
 
         return Expression.from_string(self.root, expression_str)
 
+    @overload
+    def parse_lineage(
+        self,
+        names: Iterable[str],
+        *,
+        with_alias: bool,
+        on_conflict: TOnConflictLiteral,
+        ignore_unmatched_intermediaries: bool,
+        return_unmatched_suffix: Literal[True],
+    ) -> Tuple["Description", List[str]]: ...
+
+    @overload
+    def parse_lineage(
+        self,
+        names: Iterable[str],
+        *,
+        with_alias: bool,
+        on_conflict: TOnConflictLiteral,
+        ignore_unmatched_intermediaries: bool,
+        return_unmatched_suffix: Literal[False],
+    ) -> "Description": ...
+
     @fill_in_doc(_core_doc_fields)
     def parse_lineage(
         self,
         names: Iterable[str],
-        with_alias=False,
+        *,
+        with_alias: bool = False,
         on_conflict: TOnConflictLiteral = "replace",
-        ignore_unmatched_intermediaries=False,
-    ) -> Description:
+        ignore_unmatched_intermediaries: bool = False,
+        return_unmatched_suffix: bool = False,
+    ) -> Tuple[Description, List[str]] | Description:
         """
         Parse a sequence of names into a Description.
 
@@ -331,9 +360,10 @@ class Taxonomy:
         return Description.from_lineage(
             self.root,
             names,
-            ignore_unmatched_intermediaries=ignore_unmatched_intermediaries,
             with_alias=with_alias,
             on_conflict=on_conflict,
+            ignore_unmatched_intermediaries=ignore_unmatched_intermediaries,
+            return_unmatched_suffix=return_unmatched_suffix,
         )
 
     def fill_indices(self):
@@ -429,7 +459,7 @@ class Taxonomy:
                     else:
                         break
 
-        def handle_primary(description: Description, node: PrimaryNode) -> Description:
+        def handle_primary(description: Description, node: ClassNode) -> Description:
             # Gather all rival direct (and, in case of index==None, indirect) descendants of node
             candidate_scores = [(n, probabilities[n.index]) for n in node.rivalling_children]  # type: ignore
 
@@ -458,7 +488,7 @@ class Taxonomy:
         description = handle_primary(description, description.anchor)
 
         # Once the anchor is predicted, predict additional tags
-        primary_node: PrimaryNode
+        primary_node: ClassNode
         for primary_node in description.anchor.precursors:  # type: ignore
             # Tags below a PrimaryNode are not in rivalry
             for tag in primary_node.tags:

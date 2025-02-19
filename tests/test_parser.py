@@ -8,7 +8,7 @@ from hypothesis.strategies import (
     sampled_from,
 )
 
-from polytaxo.core import Description, NegatedRealNode, PrimaryNode, TagNode
+from polytaxo.core import Description, NegatedRealNode, ClassNode, TagNode
 from polytaxo.descriptor import Descriptor
 from polytaxo.parser import quote, tokenize
 from polytaxo.taxonomy import Expression, Taxonomy
@@ -18,7 +18,7 @@ taxonomy = Taxonomy.from_dict(taxonomy_dict)
 
 
 def format_descriptor_quoted(d: Descriptor, anchor=None, quote_chars="'\"") -> str:
-    if isinstance(d, (PrimaryNode, TagNode)):
+    if isinstance(d, (ClassNode, TagNode)):
         return quote(d.format(anchor=anchor), quote_chars=quote_chars)
     if isinstance(d, NegatedRealNode):
         return "!" + format_descriptor_quoted(
@@ -71,8 +71,8 @@ def format_expression(e: Expression, space=" ", quote_chars="'\""):
 @composite
 def description(draw: DrawFn, root):
     # Draw one anchor
-    primary_nodes = [node for node in root.walk() if isinstance(node, PrimaryNode)]
-    anchor: PrimaryNode = draw(sampled_from(primary_nodes))
+    primary_nodes = [node for node in root.walk() if isinstance(node, ClassNode)]
+    anchor: ClassNode = draw(sampled_from(primary_nodes))
 
     # Draw zero or more qualifiers applicable to this anchor
     node = anchor

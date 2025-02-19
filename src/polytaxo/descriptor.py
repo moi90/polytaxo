@@ -6,7 +6,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    from .core import PrimaryNode
+    from .core import ClassNode
 
 
 T = TypeVar("T")
@@ -27,7 +27,7 @@ class Descriptor(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def format(self, anchor: Optional["PrimaryNode"] = None, quoted=False) -> str:
+    def format(self, anchor: Optional["ClassNode"] = None, quoted=False) -> str:
         """Format the descriptor as a string."""
         ...
 
@@ -64,7 +64,7 @@ class NeverDescriptor(Descriptor):
     def negate(self, negate: bool = True) -> Descriptor:
         raise NotImplementedError()
 
-    def format(self, anchor: Optional["PrimaryNode"] = None) -> str:
+    def format(self, anchor: Optional["ClassNode"] = None) -> str:
         raise NotImplementedError()
 
     def __le__(self, other) -> bool:

@@ -14,6 +14,8 @@ def test_poly_taxonomy():
     # A concrete example of a Taxonomy
     poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
 
+    poly_taxonomy.print_tree()
+
     assert poly_taxonomy.root.name == ""
     poly_taxonomy.root.find_primary(("", "Copepoda"))
     poly_taxonomy.root.find_real_node(("", "Copepoda"))

@@ -102,12 +102,14 @@ class BaseNode:
 
     @property
     def siblings(self):
-        """Return a tuple of sibling nodes."""
+        """Return a tuple of sibling nodes (with the same type as self)."""
         if self.parent is None:
             return tuple()
 
-        if isinstance(self.parent, (PrimaryNode, TagNode)):
-            return tuple(c for c in self.parent.children if c is not self)
+        if isinstance(self, ClassNode) and isinstance(self.parent, ClassNode):
+            return tuple(s for s in self.parent.classes if s is not self)
+        elif isinstance(self, TagNode) and isinstance(self.parent, TagNode):
+            return tuple(s for s in self.parent.tags if s is not self)
 
         return tuple()
 
@@ -116,7 +118,7 @@ class BaseNode:
         """Return the path from the root to this node as a tuple of names."""
         return tuple(n.name for n in self.precursors)
 
-    def format(self, anchor: Union["PrimaryNode", None] = None, quoted=False) -> str:
+    def format(self, anchor: Union["ClassNode", None] = None, quoted=False) -> str:
         """Format the node as a string relative to an optional anchor."""
         precursors = self.precursors
 
@@ -150,7 +152,7 @@ class BaseNode:
 
     def _matches_name(self, name: str, with_alias: bool) -> int:
         """Check if the node matches the given name or alias."""
-        if name == self.name:
+        if name.casefold() == self.name.casefold():
             return 1 + len(name)
 
         if with_alias:
@@ -279,7 +281,7 @@ class NegatedRealNode(TreeDescriptor, Generic[TRealNode]):
 
         self.node = node
 
-    def format(self, anchor: Union["PrimaryNode", None] = None, quoted=False) -> str:
+    def format(self, anchor: Union["ClassNode", None] = None, quoted=False) -> str:
         """Format the negated node as a string."""
         return f"!{self.node.format(anchor, quoted=quoted)}"
 
@@ -297,11 +299,11 @@ class NegatedRealNode(TreeDescriptor, Generic[TRealNode]):
             # !A <= !B iff B <= A
             return other.node <= self.node
 
-        if isinstance(self.node, PrimaryNode):
+        if isinstance(self.node, ClassNode):
             if isinstance(other, TagNode):
                 return False
 
-            if isinstance(other, PrimaryNode):
+            if isinstance(other, ClassNode):
                 # !A <= B if A is a sibling of any precursor of B
                 for n in other.precursors[::-1]:
                     if any(s <= self.node for s in n.siblings):
@@ -310,7 +312,7 @@ class NegatedRealNode(TreeDescriptor, Generic[TRealNode]):
                 return False
 
         if isinstance(self.node, TagNode):
-            if isinstance(other, PrimaryNode):
+            if isinstance(other, ClassNode):
                 return False
 
             if isinstance(other, TagNode):
@@ -330,23 +332,23 @@ class NegatedRealNode(TreeDescriptor, Generic[TRealNode]):
 class TagNode(RealNode):
     """Represents a tag node."""
 
-    parent: Union["PrimaryNode", "TagNode"]
+    parent: Union["ClassNode", "TagNode"]
 
     def __init__(
         self,
         name: str,
-        parent: Union["PrimaryNode", "TagNode"],
+        parent: Union["ClassNode", "TagNode"],
         index: Optional[int],
         meta: Optional[Mapping] = None,
         aliases: Optional[Iterable[str]] = None,
     ) -> None:
         super().__init__(name, parent, index, meta, aliases)
 
-        self.children: List["TagNode"] = []
+        self.tags: List["TagNode"] = []
 
     @staticmethod
     def from_dict(
-        name, data: Optional[Mapping], parent: Union["PrimaryNode", "TagNode"]
+        name, data: Optional[Mapping], parent: Union["ClassNode", "TagNode"]
     ) -> "TagNode":
         """Create a TagNode from a dictionary representation."""
         if data is None:
@@ -360,32 +362,33 @@ class TagNode(RealNode):
             data.get("alias"),
         )
 
-        for child_name, child_data in data.get("children", {}).items():
-            tag_node.add_child(TagNode.from_dict(child_name, child_data, tag_node))
+        for tag_name, tag_data in data.get("tags", {}).items():
+            tag_node.add_tag(TagNode.from_dict(tag_name, tag_data, tag_node))
 
         return tag_node
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert the TagNode to a dictionary representation."""
         d = super().to_dict()
-        if self.children:
-            d["children"] = {c.name: c.to_dict() for c in self.children}
+        if self.tags:
+            d["tags"] = {c.name: c.to_dict() for c in self.tags}
 
         return d
 
-    def add_child(self, node: "TagNode"):
+    def add_tag(self, tag: "TagNode"):
         """Add a child TagNode."""
-        self.children.append(node)
+        self.tags.append(tag)
+        return tag
 
     def _get_all_children(self):
-        return self.children
+        return self.tags
 
     @functools.cached_property
-    def primary_parent(self) -> "PrimaryNode":
+    def primary_parent(self) -> "ClassNode":
         """Return the primary parent (first parent that is a PrimaryNode) of the TagNode."""
         parent = self.parent
         while parent is not None:
-            if isinstance(parent, PrimaryNode):
+            if isinstance(parent, ClassNode):
                 return parent
             parent = parent.parent
 
@@ -405,16 +408,16 @@ class TagNode(RealNode):
         # If self matches, descend with rest of the path
         if specificy:
             if tail:
-                for child in self.children:
-                    yield from child._find_all_tag(
+                for subtag in self.tags:
+                    yield from subtag._find_all_tag(
                         tail, with_alias, specificy + _base_specificy
                     )
             else:
                 yield (self, specificy + _base_specificy)
 
         # Also descend with the full path to find nodes that didn't specify the full path
-        for child in self.children:
-            yield from child._find_all_tag(path, with_alias, _base_specificy)
+        for subtag in self.tags:
+            yield from subtag._find_all_tag(path, with_alias, _base_specificy)
 
     def find_tag(
         self, name_or_path: Union[str, Sequence[str]], with_alias=False
@@ -443,10 +446,10 @@ class TagNode(RealNode):
         if (self.index is not None) and (extra_info is not None):
             name += f" [{extra_info[self.index]}]"
 
-        lines = [f"{name}:"]
+        lines = [f":{name}"]
 
-        for child in self.children:
-            lines.append(indent(child.format_tree(extra_info), "  "))
+        for subtag in self.tags:
+            lines.append(indent(subtag.format_tree(extra_info), "  "))
 
         return "\n".join(lines)
 
@@ -455,11 +458,11 @@ class TagNode(RealNode):
         """The set of directly rivalling descendants."""
 
         result: List[TagNode] = []
-        for child in self.children:
-            if child.index is not None:
-                result.append(child)
+        for tag in self.tags:
+            if tag.index is not None:
+                result.append(tag)
             else:
-                result.extend(child.rivalling_children)
+                result.extend(tag.rivalling_children)
 
         return result
 
@@ -467,7 +470,7 @@ class TagNode(RealNode):
         if isinstance(other, TagNode):
             return self in other.precursors
 
-        if isinstance(other, PrimaryNode):
+        if isinstance(other, ClassNode):
             return False
 
         if isinstance(other, NegatedRealNode):
@@ -477,7 +480,12 @@ class TagNode(RealNode):
 
 
 class VirtualNode(BaseNode):
-    """Represents a virtual node."""
+    """
+    Represents a virtual node.
+
+    Virtual nodes are used in `Description.from_lineage` to map
+    external compound concepts to individual PolyTaxo concepts.
+    """
 
     def __init__(
         self,
@@ -491,42 +499,50 @@ class VirtualNode(BaseNode):
 
     def format_tree(self) -> str:
         """Format the virtual node as a tree."""
-        return f"{self.name} -> {self.description!s}"
+        return f":{self.name} -> {self.description!s}"
 
     def __repr__(self):
         return f"<{self.__class__.__name__} {self.format_tree()}>"
 
 
-class PrimaryNode(RealNode):
-    """Represents a primary node."""
+class ClassNode(RealNode):
+    """
+    Represents a class.
 
-    parent: Optional["PrimaryNode"]
+    Classes form the backbone of the PolyTaxo tree.
+    They can have subclasses, tags, and virtual nodes.
+    """
+
+    parent: Optional["ClassNode"]
 
     def __init__(
         self,
         name: str,
-        parent: Optional["PrimaryNode"],
+        parent: Optional["ClassNode"],
         index: Optional[int],
         meta: Optional[Mapping] = None,
         aliases: Optional[Iterable[str]] = None,
     ) -> None:
+        if not name and parent is not None:
+            raise ValueError("Only the root node is allowed an empty name.")
+
         super().__init__(name, parent, index, meta, aliases)
-        self.children: List["PrimaryNode"] = []
+        self.classes: List["ClassNode"] = []
         self.tags: List[TagNode] = []
         self.virtuals: List[VirtualNode] = []
 
     @staticmethod
     def from_dict(
-        name,
+        name: str,
         data: Optional[Mapping],
-        parent: Optional["PrimaryNode"] = None,
-    ) -> "PrimaryNode":
+        parent: Optional["ClassNode"] = None,
+    ) -> "ClassNode":
         """Create a PrimaryNode from a dictionary representation."""
         if data is None:
             data = {}
 
         # Create node
-        node = PrimaryNode(
+        node = ClassNode(
             name,
             parent,
             data.get("index"),
@@ -535,15 +551,15 @@ class PrimaryNode(RealNode):
         )
 
         # Create tags
-        for tag_name, tag_data in data.get("tags", {}).items():
+        for tag_name, tag_data in (data.get("tags") or {}).items():
             node.add_tag(TagNode.from_dict(tag_name, tag_data, node))
 
         # Create children (which may reference tags)
-        for child_name, child_data in data.get("children", {}).items():
-            node.add_child(PrimaryNode.from_dict(child_name, child_data, node))
+        for class_name, class_data in (data.get("classes") or {}).items():
+            node.add_class(ClassNode.from_dict(class_name, class_data, node))
 
         # Finally, create virtual nodes (which may reference tags and children)
-        for virtual_name, virtual_description in data.get("virtuals", {}).items():
+        for virtual_name, virtual_description in (data.get("virtuals") or {}).items():
             try:
                 description = node.parse_description(virtual_description)
                 node.add_virtual(VirtualNode(virtual_name, node, description))
@@ -563,8 +579,8 @@ class PrimaryNode(RealNode):
             else:
                 d["alias"] = self.aliases[0].pattern  # type: ignore
 
-        if self.children:
-            d["children"] = {c.name: c.to_dict() for c in self.children}
+        if self.classes:
+            d["classes"] = {c.name: c.to_dict() for c in self.classes}
 
         if self.tags:
             d["tags"] = {t.name: t.to_dict() for t in self.tags}
@@ -574,19 +590,19 @@ class PrimaryNode(RealNode):
         return d
 
     def _get_all_children(self):
-        return self.children + self.tags + self.virtuals
+        return self.classes + self.tags + self.virtuals
 
-    def add_child(self, node: "PrimaryNode"):
-        """Add a child PrimaryNode."""
+    def add_class(self, subclass: "ClassNode"):
+        """Add a subclass."""
         # TODO: Make sure that the new node does not shadow an existing one
-        self.children.append(node)
-        return node
+        self.classes.append(subclass)
+        return subclass
 
-    def add_tag(self, node: TagNode):
-        """Add a TagNode."""
+    def add_tag(self, tag: TagNode):
+        """Add a tag."""
         # TODO: Make sure that the new node does not shadow an existing one
-        self.tags.append(node)
-        return node
+        self.tags.append(tag)
+        return tag
 
     def add_virtual(self, node: VirtualNode):
         """Add a VirtualNode."""
@@ -596,7 +612,7 @@ class PrimaryNode(RealNode):
 
     def _find_all_primary(
         self, path: Sequence[str], with_alias=False, _base_specificy=0
-    ) -> Iterable[Tuple["PrimaryNode", int]]:
+    ) -> Iterable[Tuple["ClassNode", int]]:
         """Find all PrimaryNode instances matching the given path."""
 
         name, *tail = path
@@ -606,16 +622,16 @@ class PrimaryNode(RealNode):
         # If self matches, descend with rest of the path
         if specificy:
             if tail:
-                for child in self.children:
-                    yield from child._find_all_primary(
+                for subclass in self.classes:
+                    yield from subclass._find_all_primary(
                         tail, with_alias, specificy + _base_specificy
                     )
             else:
                 yield (self, specificy + _base_specificy)
 
         # Also descend with the full path to find nodes that didn't specify the full path
-        for child in self.children:
-            yield from child._find_all_primary(path, with_alias, _base_specificy)
+        for subclass in self.classes:
+            yield from subclass._find_all_primary(path, with_alias, _base_specificy)
 
     def _find_all_tag(
         self, path: Sequence[str], with_alias=False
@@ -637,8 +653,8 @@ class PrimaryNode(RealNode):
 
         specificy = self._matches_name(name, with_alias)
         if specificy and tail:
-            for child in self.children:
-                yield from child._find_all_virtual(
+            for subclass in self.classes:
+                yield from subclass._find_all_virtual(
                     tail, with_alias, specificy + _base_specificy
                 )
 
@@ -651,7 +667,7 @@ class PrimaryNode(RealNode):
         if self.parent is not None:
             yield from self.parent._find_all_virtual(path, with_alias, _base_specificy)
 
-    def _find_primary(self, name, with_alias=False) -> "PrimaryNode":
+    def _find_primary(self, name, with_alias=False) -> "ClassNode":
         """Return the first PrimaryNode from the current subtree with the given name."""
 
         matches = self._find_all_primary(name, with_alias)
@@ -669,7 +685,7 @@ class PrimaryNode(RealNode):
 
     def find_primary(
         self, name_or_path: Union[str, Sequence[str]], with_alias=False
-    ) -> "PrimaryNode":
+    ) -> "ClassNode":
         """Find a primary node by name or path."""
         name_or_path = _validate_name_or_path(name_or_path)
 
@@ -749,8 +765,6 @@ class PrimaryNode(RealNode):
         matches.extend(self._find_all_tag(name_or_path, with_alias=with_alias))
         matches.extend(self._find_all_virtual(name_or_path, with_alias=with_alias))
 
-        print(f"matches for {name_or_path}", matches)
-
         # Sort matches by specificy
         return _best_match(self, name_or_path, matches)
 
@@ -771,10 +785,7 @@ class PrimaryNode(RealNode):
         if self.index is not None and extra is not None:
             name += f" [{extra[self.index]}]"
 
-        lines = [f"{name}::"]
-
-        for child in self.children:
-            lines.append(indent(child.format_tree(extra, virtuals), "  "))
+        lines = [f"/{name}"]
 
         for tag in self.tags:
             lines.append(indent(tag.format_tree(extra), "  "))
@@ -783,11 +794,14 @@ class PrimaryNode(RealNode):
             for virtual in self.virtuals:
                 lines.append(indent(virtual.format_tree(), "  "))
 
+        for subclass in self.classes:
+            lines.append(indent(subclass.format_tree(extra, virtuals), "  "))
+
         return "\n".join(lines)
 
     def find_real_node(
         self, name_or_path: Union[str, Sequence[str]], with_alias=False
-    ) -> Union["PrimaryNode", "TagNode"]:
+    ) -> Union["ClassNode", "TagNode"]:
         """Find a real node (PrimaryNode or TagNode) by name or path."""
         if not with_alias:
             try:
@@ -832,7 +846,7 @@ class PrimaryNode(RealNode):
             on_conflict=on_conflict,
         )
 
-    def union(self, other: "PrimaryNode"):
+    def union(self, other: "ClassNode"):
         """Return the union of the current node with another node."""
         if self in other.precursors:
             return other
@@ -846,12 +860,12 @@ class PrimaryNode(RealNode):
     def rivalling_children(self):
         """The set of directly rivalling descendants."""
 
-        result: List[PrimaryNode] = []
-        for child in self.children:
-            if child.index is not None:
-                result.append(child)
+        result: List[ClassNode] = []
+        for subclass in self.classes:
+            if subclass.index is not None:
+                result.append(subclass)
             else:
-                result.extend(child.rivalling_children)
+                result.extend(subclass.rivalling_children)
 
         return result
 
@@ -862,7 +876,7 @@ class PrimaryNode(RealNode):
         return super().negate(negate)
 
     def __le__(self, other) -> bool:
-        if isinstance(other, (TagNode, PrimaryNode)):
+        if isinstance(other, (TagNode, ClassNode)):
             return self in other.precursors
 
         if isinstance(other, NegatedRealNode):
@@ -885,6 +899,8 @@ class Description:
     """
     Represents a PolyTaxo description.
 
+    Descriptions are used to describe an object using a sequence of descriptors.
+
     Args:
         {anchor_arg}
         qualifiers (Iterable[Descriptor], optional): Additional parts of the description.
@@ -892,10 +908,10 @@ class Description:
 
     def __init__(
         self,
-        anchor: "PrimaryNode",
+        anchor: "ClassNode",
         qualifiers: Optional[Iterable[Descriptor]] = None,
     ) -> None:
-        self.anchor: "PrimaryNode" = anchor
+        self.anchor: "ClassNode" = anchor
         self.qualifiers: List[Descriptor] = []
 
         if qualifiers is not None:
@@ -931,7 +947,7 @@ class Description:
     @staticmethod
     @fill_in_doc(_doc_fields)
     def from_string(
-        anchor: PrimaryNode,
+        anchor: ClassNode,
         description_str: str,
         with_alias=False,
         on_conflict: TOnConflictLiteral = "replace",
@@ -951,17 +967,45 @@ class Description:
         )
         return d
 
+    # @overload
+    # @staticmethod
+    # def from_lineage(
+    #     anchor: ClassNode,
+    #     names: Iterable[str],
+    #     *,
+    #     with_alias: bool,
+    #     on_conflict: TOnConflictLiteral,
+    #     ignore_unmatched_intermediaries: bool,
+    #     return_unmatched_suffix: Literal[True],
+    # ) -> Tuple["Description", List[str]]: ...
+
+    # @overload
+    # @staticmethod
+    # def from_lineage(
+    #     anchor: ClassNode,
+    #     names: Iterable[str],
+    #     *,
+    #     with_alias: bool,
+    #     on_conflict: TOnConflictLiteral,
+    #     ignore_unmatched_intermediaries: bool,
+    #     return_unmatched_suffix: Literal[False],
+    # ) -> "Description": ...
+
     @staticmethod
     @fill_in_doc(_doc_fields)
     def from_lineage(
-        anchor: PrimaryNode,
+        anchor: ClassNode,
         names: Iterable[str],
-        with_alias=False,
+        *,
+        with_alias: bool = False,
         on_conflict: TOnConflictLiteral = "replace",
-        ignore_unmatched_intermediaries=False,
-    ) -> "Description":
+        ignore_unmatched_intermediaries: bool = False,
+        return_unmatched_suffix: bool = False,
+    ):
         """
         Parse a sequence of names into a Description object.
+
+        This can be used to transform a strictly hierarchical representation into a PolyTaxo Description.
 
         Args:
             {anchor_arg}
@@ -976,10 +1020,11 @@ class Description:
 
         description = Description(anchor)
 
-        unmatched_names = []
+        unmatched_names: List[str] = []
 
         for name in names:
             try:
+                # TODO: This should rather be parse_name() -> Descriptor | Description
                 node = description.anchor.find_any_node(name, with_alias)
             except NodeNotFoundError:
                 if ignore_unmatched_intermediaries:
@@ -995,6 +1040,9 @@ class Description:
                 description.add(node.description, on_conflict=on_conflict)
             else:
                 raise ValueError(f"Unexpected node: {node}")
+
+        if return_unmatched_suffix:
+            return description, unmatched_names
 
         if unmatched_names:
             raise ValueError(f"Unmatched suffix: {'/'.join(unmatched_names)}")
@@ -1079,7 +1127,7 @@ class Description:
 
     def _add_primary(
         self,
-        other: "PrimaryNode",
+        other: "ClassNode",
         on_conflict: TOnConflictLiteral,
     ):
         if self.anchor <= other:
@@ -1130,7 +1178,7 @@ class Description:
 
     def _add_negated_primary(
         self,
-        other: "NegatedRealNode[PrimaryNode]",
+        other: "NegatedRealNode[ClassNode]",
         on_conflict: TOnConflictLiteral,
     ):
         # Check if other is already implied
@@ -1192,14 +1240,14 @@ class Description:
         if isinstance(other, Description):
             self._add_poly_description(other, on_conflict)
 
-        elif isinstance(other, PrimaryNode):
+        elif isinstance(other, ClassNode):
             self._add_primary(other, on_conflict)
 
         elif isinstance(other, TagNode):
             self._add_tag(other, on_conflict)
 
         elif isinstance(other, NegatedRealNode):
-            if isinstance(other.node, PrimaryNode):
+            if isinstance(other.node, ClassNode):
                 self._add_negated_primary(other, on_conflict)
 
             elif isinstance(other.node, TagNode):
@@ -1270,7 +1318,7 @@ class Description:
 
         return self
 
-    def format(self, anchor: PrimaryNode | None = None):
+    def format(self, anchor: ClassNode | None = None):
         # Sort qualifiers alphabetically for stable lookup
         qualifiers = sorted(
             [q.format(anchor=self.anchor, quoted=True) for q in self.qualifiers]
