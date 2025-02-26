@@ -40,7 +40,7 @@ def fill_in_doc(fields: Mapping[str, str]) -> Callable[[F], F]:
 
 
 _doc_fields = {
-    "anchor_arg": """anchor (PrimaryNode): The starting point for interpreting descriptors.""",
+    "anchor_arg": """anchor (ClassNode): The starting point for interpreting descriptors.""",
     "on_conflict_arg": """on_conflict ("replace", "raise", or "skip", optional): Conflict resolution strategy. Defaults to "replace".""",
     "ignore_unmatched_intermediaries_arg": """ignore_unmatched_intermediaries (bool, optional): Whether to ignore unmatched intermediaries. Defaults to False.""",
     "with_alias_arg": """with_alias (bool, optional): Whether to consider aliases. Defaults to False.""",
@@ -53,7 +53,9 @@ class NodeNotFoundError(Exception):
     pass
 
 
-class TreeDescriptor(Descriptor):
+class CoreDescriptor(Descriptor):
+    """A common base class that makes Descriptors comparable to Descriptions."""
+
     def __le__(self, other) -> bool:
         if isinstance(other, Description):
             for other_descriptor in other.descriptors:
@@ -71,7 +73,7 @@ def _validate_name_or_path(name_or_path: Union[str, Sequence[str]]) -> Sequence[
 
 
 class BaseNode:
-    """Base class for all nodes."""
+    """Base class for all taxonomy nodes."""
 
     def __init__(
         self,
@@ -125,7 +127,7 @@ class BaseNode:
         if anchor is not None:
             # TagNodes are displayed relative to the next precursor of anchor
             if isinstance(self, TagNode):
-                # Find first PrimaryNode in precursors
+                # Find first ClassNode in precursors
                 tag_anchor = self.primary_parent
                 if tag_anchor in anchor.precursors:
                     anchor = tag_anchor
@@ -210,8 +212,8 @@ class IndexProvider:
         return max(self.taken) + 1
 
 
-class RealNode(BaseNode, TreeDescriptor):
-    """Base class for real nodes (PrimaryNode, TagNode)."""
+class RealNode(BaseNode, CoreDescriptor):
+    """Base class for real nodes (ClassNode, TagNode)."""
 
     def __init__(
         self,
@@ -240,27 +242,15 @@ class RealNode(BaseNode, TreeDescriptor):
     def unique_id(self):
         return self.path
 
-    def _get_all_children(self):
+    @property
+    def real_children(self) -> List["RealNode"]:
         raise NotImplementedError()
-
-    def _include_in_binary(self):
-        """Determine if the node should be included in the binary output."""
-        return (type(self.parent) == type(self)) or not self._get_all_children()
-
-    def fill_indices(self, index_provider: IndexProvider):
-        """Fill the indices for the node and its children."""
-        if self.index is None and self._include_in_binary():
-            self.index = index_provider.take()
-        for child in self._get_all_children():
-            if isinstance(child, RealNode):
-                child.fill_indices(index_provider)
 
     def walk(self) -> Iterator["RealNode"]:
         """Walk through the node and its children."""
         yield self
-        for child in self._get_all_children():
-            if isinstance(child, RealNode):
-                yield from child.walk()
+        for child in self.real_children:
+            yield from child.walk()
 
     def negate(self, negate: bool = True) -> Descriptor:
         if negate:
@@ -271,8 +261,10 @@ class RealNode(BaseNode, TreeDescriptor):
 TRealNode = TypeVar("TRealNode", bound=RealNode)
 
 
-class NegatedRealNode(TreeDescriptor, Generic[TRealNode]):
+class NegatedRealNode(CoreDescriptor, Generic[TRealNode]):
     """Represents a negated real node."""
+
+    is_negated: bool = True
 
     def __init__(self, node: TRealNode) -> None:
         # We cannot negate the root
@@ -380,12 +372,13 @@ class TagNode(RealNode):
         self.tags.append(tag)
         return tag
 
-    def _get_all_children(self):
+    @property
+    def real_children(self):
         return self.tags
 
     @functools.cached_property
     def primary_parent(self) -> "ClassNode":
-        """Return the primary parent (first parent that is a PrimaryNode) of the TagNode."""
+        """Return the primary parent (first parent that is a ClassNode) of the TagNode."""
         parent = self.parent
         while parent is not None:
             if isinstance(parent, ClassNode):
@@ -537,7 +530,7 @@ class ClassNode(RealNode):
         data: Optional[Mapping],
         parent: Optional["ClassNode"] = None,
     ) -> "ClassNode":
-        """Create a PrimaryNode from a dictionary representation."""
+        """Create a ClassNode from a dictionary representation."""
         if data is None:
             data = {}
 
@@ -571,7 +564,7 @@ class ClassNode(RealNode):
         return node
 
     def to_dict(self):
-        """Convert the PrimaryNode to a dictionary representation."""
+        """Convert the ClassNode to a dictionary representation."""
         d = super().to_dict()
         if self.aliases:
             if isinstance(self.aliases, str) or len(self.aliases) > 1:
@@ -589,8 +582,9 @@ class ClassNode(RealNode):
             d["virtuals"] = {v.name: str(v.description) for v in self.virtuals}
         return d
 
-    def _get_all_children(self):
-        return self.classes + self.tags + self.virtuals
+    @property
+    def real_children(self):
+        return self.classes + self.tags
 
     def add_class(self, subclass: "ClassNode"):
         """Add a subclass."""
@@ -613,7 +607,7 @@ class ClassNode(RealNode):
     def _find_all_primary(
         self, path: Sequence[str], with_alias=False, _base_specificy=0
     ) -> Iterable[Tuple["ClassNode", int]]:
-        """Find all PrimaryNode instances matching the given path."""
+        """Find all ClassNode instances matching the given path."""
 
         name, *tail = path
 
@@ -668,7 +662,7 @@ class ClassNode(RealNode):
             yield from self.parent._find_all_virtual(path, with_alias, _base_specificy)
 
     def _find_primary(self, name, with_alias=False) -> "ClassNode":
-        """Return the first PrimaryNode from the current subtree with the given name."""
+        """Return the first ClassNode from the current subtree with the given name."""
 
         matches = self._find_all_primary(name, with_alias)
 
@@ -769,7 +763,7 @@ class ClassNode(RealNode):
         return _best_match(self, name_or_path, matches)
 
     def format_tree(self, extra=None, virtuals=False) -> str:
-        """Format the PrimaryNode and its children as a tree."""
+        """Format the ClassNode and its children as a tree."""
         name = self.name
 
         attrs = []
@@ -802,7 +796,7 @@ class ClassNode(RealNode):
     def find_real_node(
         self, name_or_path: Union[str, Sequence[str]], with_alias=False
     ) -> Union["ClassNode", "TagNode"]:
-        """Find a real node (PrimaryNode or TagNode) by name or path."""
+        """Find a real node (ClassNode or TagNode) by name or path."""
         if not with_alias:
             try:
                 return self.find_primary(name_or_path)
@@ -1053,63 +1047,6 @@ class Description:
     def descriptors(self) -> Sequence[Descriptor]:
         """Return all descriptors (anchor + qualifiers)."""
         return [self.anchor] + self.qualifiers
-
-    def to_binary_raw(self) -> Mapping["RealNode", bool]:
-        """Convert the description to a binary representation of nodes and their active state."""
-        map: Mapping[RealNode, bool] = {}
-
-        def handle_positive(node: RealNode):
-            # Activate node and all precursors
-            for precursor in node.precursors:
-                if not isinstance(precursor, node.__class__):
-                    continue
-
-                if precursor._include_in_binary():
-                    map[precursor] = True
-
-                # Deactivate all siblings
-                for sibling in precursor.siblings:
-                    if not isinstance(sibling, node.__class__):
-                        continue
-
-                    if sibling._include_in_binary():
-                        map[sibling] = False
-
-        def handle_negative(node: RealNode):
-            # Deactivate node and all successors
-            for successor in node.walk():
-                if not isinstance(successor, node.__class__):
-                    continue
-
-                if successor._include_in_binary():
-                    map[successor] = False
-
-        handle_positive(self.anchor)
-
-        for qualifier in self.qualifiers:
-            if isinstance(qualifier, RealNode):
-                handle_positive(qualifier)
-            elif isinstance(qualifier, NegatedRealNode):
-                handle_negative(qualifier.node)
-            else:
-                raise ValueError(f"Unknown qualifier type: {type(qualifier)}")
-
-        return map
-
-    def to_binary_str(self) -> Mapping[str, bool]:
-        """Convert the binary representation to a string representation."""
-        return {str(k): v for k, v in self.to_binary_raw().items()}
-
-    def to_multilabel(self, n_labels=None, fill_na: Any = -1) -> List:
-        """Transform the description to a list of target values."""
-        int_map = {
-            n.index: v for n, v in self.to_binary_raw().items() if n.index is not None
-        }
-
-        if n_labels is None:
-            n_labels = max(int_map.keys()) + 1
-
-        return [int_map.get(i, fill_na) for i in range(n_labels)]
 
     def copy(self) -> "Description":
         """Create a copy of the current Description."""

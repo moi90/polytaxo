@@ -1,7 +1,7 @@
 # PolyTaxo
 
 <p align="center" width="100%">
-    <img width="15%" src="docs/transparent-128.png"> 
+    <img width="15%" src="docs/transparent-128.png" alt="PolyTaxo"> 
 </p>
 
 
