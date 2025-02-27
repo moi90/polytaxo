@@ -128,7 +128,7 @@ class BaseNode:
             # TagNodes are displayed relative to the next precursor of anchor
             if isinstance(self, TagNode):
                 # Find first ClassNode in precursors
-                tag_anchor = self.primary_parent
+                tag_anchor = self.parent_class
                 if tag_anchor in anchor.precursors:
                     anchor = tag_anchor
 
@@ -377,17 +377,15 @@ class TagNode(RealNode):
         return self.tags
 
     @functools.cached_property
-    def primary_parent(self) -> "ClassNode":
-        """Return the primary parent (first parent that is a ClassNode) of the TagNode."""
+    def parent_class(self) -> "ClassNode":
+        """Return the class parent (first parent that is a ClassNode) of the TagNode."""
         parent = self.parent
         while parent is not None:
             if isinstance(parent, ClassNode):
                 return parent
             parent = parent.parent
 
-        raise ValueError(
-            f"Tag without a primary parent: {self.name}"
-        )  # pragma: no cover
+        raise ValueError(f"Tag without a class parent: {self.name}")  # pragma: no cover
 
     def _find_all_tag(
         self, path: Sequence[str], with_alias=False, _base_specificy=0
@@ -604,7 +602,7 @@ class ClassNode(RealNode):
         self.virtuals.append(node)
         return node
 
-    def _find_all_primary(
+    def _find_all_class(
         self, path: Sequence[str], with_alias=False, _base_specificy=0
     ) -> Iterable[Tuple["ClassNode", int]]:
         """Find all ClassNode instances matching the given path."""
@@ -617,7 +615,7 @@ class ClassNode(RealNode):
         if specificy:
             if tail:
                 for subclass in self.classes:
-                    yield from subclass._find_all_primary(
+                    yield from subclass._find_all_class(
                         tail, with_alias, specificy + _base_specificy
                     )
             else:
@@ -625,7 +623,7 @@ class ClassNode(RealNode):
 
         # Also descend with the full path to find nodes that didn't specify the full path
         for subclass in self.classes:
-            yield from subclass._find_all_primary(path, with_alias, _base_specificy)
+            yield from subclass._find_all_class(path, with_alias, _base_specificy)
 
     def _find_all_tag(
         self, path: Sequence[str], with_alias=False
@@ -661,30 +659,14 @@ class ClassNode(RealNode):
         if self.parent is not None:
             yield from self.parent._find_all_virtual(path, with_alias, _base_specificy)
 
-    def _find_primary(self, name, with_alias=False) -> "ClassNode":
-        """Return the first ClassNode from the current subtree with the given name."""
-
-        matches = self._find_all_primary(name, with_alias)
-
-        if not matches:
-            raise NodeNotFoundError(
-                f"Could not find {name} below {quote(self.format())}"
-            )
-
-        # If we're matching with alias, multiple children can produce a match.
-        # We therefore select the shortest match
-        matches.sort(key=lambda n: len(n.precursors))
-
-        return matches[0]
-
-    def find_primary(
+    def find_class(
         self, name_or_path: Union[str, Sequence[str]], with_alias=False
     ) -> "ClassNode":
-        """Find a primary node by name or path."""
+        """Find a class node by name or path."""
         name_or_path = _validate_name_or_path(name_or_path)
 
         return _best_match(
-            self, name_or_path, self._find_all_primary(name_or_path, with_alias)
+            self, name_or_path, self._find_all_class(name_or_path, with_alias)
         )
 
     def find_tag(self, name_or_path: Union[str, Sequence[str]]) -> TagNode:
@@ -721,7 +703,7 @@ class ClassNode(RealNode):
         self, name_or_path: Union[str, Sequence[str]], with_alias=False
     ) -> BaseNode:
         """
-        Find any node (primary, tag or virtual) in relation to self.
+        Find any node (class, tag or virtual) in relation to self.
 
         Args:
             names (iterable of str): ...
@@ -735,7 +717,7 @@ class ClassNode(RealNode):
 
         if not with_alias:
             try:
-                return self.find_primary(name_or_path)
+                return self.find_class(name_or_path)
             except NodeNotFoundError:
                 pass
 
@@ -755,7 +737,7 @@ class ClassNode(RealNode):
 
         # Find all matching nodes
         matches = []
-        matches.extend(self._find_all_primary(name_or_path, with_alias=with_alias))
+        matches.extend(self._find_all_class(name_or_path, with_alias=with_alias))
         matches.extend(self._find_all_tag(name_or_path, with_alias=with_alias))
         matches.extend(self._find_all_virtual(name_or_path, with_alias=with_alias))
 
@@ -799,7 +781,7 @@ class ClassNode(RealNode):
         """Find a real node (ClassNode or TagNode) by name or path."""
         if not with_alias:
             try:
-                return self.find_primary(name_or_path)
+                return self.find_class(name_or_path)
             except NodeNotFoundError:
                 pass
 
@@ -811,7 +793,7 @@ class ClassNode(RealNode):
             raise NodeNotFoundError(f"{name_or_path} (anchor={quote(self.format())})")
         else:
             matches = []
-            matches.extend(self._find_all_primary(name_or_path, with_alias=with_alias))
+            matches.extend(self._find_all_class(name_or_path, with_alias=with_alias))
             matches.extend(self._find_all_tag(name_or_path, with_alias=with_alias))
             return _best_match(self, name_or_path, matches)
 
@@ -1062,7 +1044,7 @@ class Description:
         for qualifier in other.qualifiers:
             self.add(qualifier, on_conflict)
 
-    def _add_primary(
+    def _add_class(
         self,
         other: "ClassNode",
         on_conflict: TOnConflictLiteral,
@@ -1094,8 +1076,8 @@ class Description:
         if other <= self:
             return
 
-        # Add primary parent of tag
-        self._add_primary(other.primary_parent, on_conflict=on_conflict)
+        # Add parent class of tag
+        self._add_class(other.parent_class, on_conflict=on_conflict)
 
         # Remove existing qualifiers that are implied by `other`
         qualifiers = [q for q in self.qualifiers if not (q <= other)]
@@ -1113,7 +1095,7 @@ class Description:
 
         self.qualifiers = qualifiers + [other]
 
-    def _add_negated_primary(
+    def _add_negated_class(
         self,
         other: "NegatedRealNode[ClassNode]",
         on_conflict: TOnConflictLiteral,
@@ -1178,14 +1160,14 @@ class Description:
             self._add_poly_description(other, on_conflict)
 
         elif isinstance(other, ClassNode):
-            self._add_primary(other, on_conflict)
+            self._add_class(other, on_conflict)
 
         elif isinstance(other, TagNode):
             self._add_tag(other, on_conflict)
 
         elif isinstance(other, NegatedRealNode):
             if isinstance(other.node, ClassNode):
-                self._add_negated_primary(other, on_conflict)
+                self._add_negated_class(other, on_conflict)
 
             elif isinstance(other.node, TagNode):
                 self._add_negated_tag(other, on_conflict)

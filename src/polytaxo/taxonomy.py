@@ -242,7 +242,7 @@ class Expression:
 
 
 class Taxonomy:
-    """Taxonomy consisting of primary nodes and tag nodes."""
+    """Taxonomy consisting of class nodes and tag nodes."""
 
     def __init__(self, root: ClassNode) -> None:
         self.root = root

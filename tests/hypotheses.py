@@ -14,8 +14,8 @@ from tests.helpers import format_description, format_expression
 @composite
 def description(draw: DrawFn, root):
     # Draw one anchor
-    primary_nodes = [node for node in root.walk() if isinstance(node, ClassNode)]
-    anchor: ClassNode = draw(sampled_from(primary_nodes))
+    class_nodes = [node for node in root.walk() if isinstance(node, ClassNode)]
+    anchor: ClassNode = draw(sampled_from(class_nodes))
 
     # Draw zero or more qualifiers applicable to this anchor
     node = anchor

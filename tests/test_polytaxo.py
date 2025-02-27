@@ -17,7 +17,7 @@ def test_poly_taxonomy():
     poly_taxonomy.print_tree()
 
     assert poly_taxonomy.root.name == ""
-    poly_taxonomy.root.find_primary(("", "Copepoda"))
+    poly_taxonomy.root.find_class(("", "Copepoda"))
     poly_taxonomy.root.find_real_node(("", "Copepoda"))
 
     # Test roundtripping
@@ -73,9 +73,9 @@ def test_poly_taxonomy():
     )
 
     # Check implication for negated properties
-    Copepoda = poly_taxonomy.root.find_primary("Copepoda")
+    Copepoda = poly_taxonomy.root.find_class("Copepoda")
     male = Copepoda.find_tag(["sex", "male"])
-    female = poly_taxonomy.root.find_primary("Copepoda").find_tag(["sex", "female"])
+    female = poly_taxonomy.root.find_class("Copepoda").find_tag(["sex", "female"])
     assert ~male <= female
 
     assert male.negate(False) == male

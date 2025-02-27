@@ -260,10 +260,10 @@ class DescriptionEncoder:
         handle_node(description.anchor)
 
         # Once the anchor is predicted, predict additional tags
-        primary_node: ClassNode
-        for primary_node in description.anchor.precursors:  # type: ignore
-            # Tags below a PrimaryNode are not in rivalry
-            for tag in primary_node.tags:
+        class_node: ClassNode
+        for class_node in description.anchor.precursors:  # type: ignore
+            # Tags below a ClassNode are not in rivalry
+            for tag in class_node.tags:
                 if tag in node_indexes:
                     score = probabilities[node_indexes[tag]]
                     if score > thr_abs:
