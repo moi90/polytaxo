@@ -18,6 +18,7 @@ from typing import (
     Tuple,
     TypeVar,
     Union,
+    overload,
 )
 
 from .alias import Alias
@@ -943,29 +944,29 @@ class Description:
         )
         return d
 
-    # @overload
-    # @staticmethod
-    # def from_lineage(
-    #     anchor: ClassNode,
-    #     names: Iterable[str],
-    #     *,
-    #     with_alias: bool,
-    #     on_conflict: TOnConflictLiteral,
-    #     ignore_unmatched_intermediaries: bool,
-    #     return_unmatched_suffix: Literal[True],
-    # ) -> Tuple["Description", List[str]]: ...
+    @overload
+    @staticmethod
+    def from_lineage(
+        anchor: ClassNode,
+        names: Iterable[str],
+        *,
+        with_alias: bool = False,
+        on_conflict: TOnConflictLiteral = "replace",
+        ignore_unmatched_intermediaries: bool = False,
+        return_unmatched_suffix: Literal[True],
+    ) -> Tuple["Description", List[str]]: ...
 
-    # @overload
-    # @staticmethod
-    # def from_lineage(
-    #     anchor: ClassNode,
-    #     names: Iterable[str],
-    #     *,
-    #     with_alias: bool,
-    #     on_conflict: TOnConflictLiteral,
-    #     ignore_unmatched_intermediaries: bool,
-    #     return_unmatched_suffix: Literal[False],
-    # ) -> "Description": ...
+    @overload
+    @staticmethod
+    def from_lineage(
+        anchor: ClassNode,
+        names: Iterable[str],
+        *,
+        with_alias: bool = False,
+        on_conflict: TOnConflictLiteral = "replace",
+        ignore_unmatched_intermediaries: bool = False,
+        return_unmatched_suffix: Literal[False] = False,
+    ) -> "Description": ...
 
     @staticmethod
     @fill_in_doc(_doc_fields)
@@ -977,7 +978,7 @@ class Description:
         on_conflict: TOnConflictLiteral = "replace",
         ignore_unmatched_intermediaries: bool = False,
         return_unmatched_suffix: bool = False,
-    ):
+    ) -> Tuple["Description", List[str]] | "Description":
         """
         Parse a sequence of names into a Description object.
 

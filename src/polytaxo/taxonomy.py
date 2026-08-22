@@ -317,9 +317,9 @@ class Taxonomy:
         self,
         names: Iterable[str],
         *,
-        with_alias: bool,
-        on_conflict: TOnConflictLiteral,
-        ignore_unmatched_intermediaries: bool,
+        with_alias: bool = False,
+        on_conflict: TOnConflictLiteral = "replace",
+        ignore_unmatched_intermediaries: bool = False,
         return_unmatched_suffix: Literal[True],
     ) -> Tuple["Description", List[str]]: ...
 
@@ -328,10 +328,10 @@ class Taxonomy:
         self,
         names: Iterable[str],
         *,
-        with_alias: bool,
-        on_conflict: TOnConflictLiteral,
-        ignore_unmatched_intermediaries: bool,
-        return_unmatched_suffix: Literal[False],
+        with_alias: bool = False,
+        on_conflict: TOnConflictLiteral = "replace",
+        ignore_unmatched_intermediaries: bool = False,
+        return_unmatched_suffix: Literal[False] = False,
     ) -> "Description": ...
 
     @fill_in_doc(_core_doc_fields)
