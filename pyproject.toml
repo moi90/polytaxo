@@ -1,19 +1,49 @@
-[build-system]
-requires = ["setuptools>=61.0", "versioneer[toml]"]
-build-backend = "setuptools.build_meta"
-
-[tool.coverage.report]
-omit = [
-    # omit this single file
-    "src/polytaxo/_version.py",
+[project]
+name = "polytaxo"
+description = "A versatile hierarchical classification system designed to handle complex, polyhierarchical descriptions."
+dynamic = ["version"]
+readme = "README.md"
+authors = [
+    { name = "Simon-Martin Schröder", email = "mschroeder@geomar.de" }
 ]
+license = "GPL-3.0-only"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "numpy",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[dependency-groups]
+dev = [
+    "hypothesis",
+    "pytest",
+    "pytest-cov",
+    "pyright"
+]
+docs = [
+    "sphinx>=1.4",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/polytaxo"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=polytaxo --cov-report xml"
-
-[tool.versioneer]
-VCS = "git"
-style = "pep440"
-versionfile_source = "src/polytaxo/_version.py"
-versionfile_build = "polytaxo/_version.py"
-tag_prefix = "v"
