@@ -113,9 +113,9 @@ def test_poly_taxonomy():
     Calanus_female_frontal = poly_taxonomy.parse_description(
         "Calanus sex:female view:frontal"
     )
-    assert Copepoda_not_male_exclude_lateral.match(
-        Calanus_female_frontal
-    ), f"{Copepoda_not_male_exclude_lateral} does not match {Calanus_female_frontal}"
+    assert Copepoda_not_male_exclude_lateral.match(Calanus_female_frontal), (
+        f"{Copepoda_not_male_exclude_lateral} does not match {Calanus_female_frontal}"
+    )
 
     assert Calanus_male_lateral.copy().add(Copepoda) == Calanus_male_lateral
 
@@ -128,9 +128,9 @@ def test_poly_taxonomy():
 
     result = Copepoda_not_male_exclude_lateral.apply(Calanus_male_lateral.copy())
     expected = poly_taxonomy.parse_description("Calanus !sex:male")
-    assert (
-        result == expected
-    ), f"{Calanus_male_lateral} %% {Copepoda_not_male_exclude_lateral} != {expected}"
+    assert result == expected, (
+        f"{Calanus_male_lateral} %% {Copepoda_not_male_exclude_lateral} != {expected}"
+    )
 
     Cop_wo_Calanus = poly_taxonomy.parse_expression("Copepoda -'Calanus'")
     result = Cop_wo_Calanus.apply(Calanus_male_lateral.copy())
@@ -197,9 +197,7 @@ def test_parse_lineage():
         (
             "cvstage<Scaphocalanus<Scolecitrichidae<Calanoida<Copepoda<Maxillopoda<Crustacea<Arthropoda<Metazoa<Holozoa<Opisthokonta<Eukaryota<living".split(
                 "<"
-            )[
-                ::-1
-            ]
+            )[::-1]
         ),
         ignore_unmatched_intermediaries=True,
         with_alias=True,
@@ -207,6 +205,61 @@ def test_parse_lineage():
     assert Scaphocalanus_cvstage == poly_taxonomy.parse_description(
         "Copepoda/Other stage:CV"
     )
+
+
+def test_parse_lineage_with_wildcard_precedence():
+    poly_taxonomy = Taxonomy.from_dict({
+        "classes": {
+            "Copepoda": {
+                "classes": {
+                    "Calanus": {
+                        "classes": {
+                            "Calanus other": {
+                                "alias": "*",
+                            }
+                        }
+                    },
+                    "Other Copepoda": {
+                        "alias": "*",
+                    },
+                }
+            }
+        }
+    })
+
+    result = poly_taxonomy.parse_lineage(
+        "Copepoda<Multicrustacea<Crustacea<Arthropoda".split("<")[::-1],
+        ignore_unmatched_intermediaries=True,
+        with_alias=True,
+    )
+
+    expected = Description(poly_taxonomy.root.find_class(["Copepoda"]))
+    assert result == expected
+
+
+def test_parse_lineage_strict_does_not_skip_unmatched_prefix():
+    poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
+
+    # In strict mode, an unmatched first token must fail immediately.
+    with pytest.raises(NodeNotFoundError):
+        poly_taxonomy.parse_lineage(
+            ["living", "Copepoda"],
+            ignore_unmatched_intermediaries=False,
+        )
+
+
+def test_find_any_node_raises_on_equal_specificity_tie():
+    poly_taxonomy = Taxonomy.from_dict(
+        {
+            "classes": {
+                "A": {"alias": "x"},
+                "B": {"alias": "x"},
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="Ambiguous match"):
+        poly_taxonomy.root.find_any_node("x", with_alias=True)
 
 
 def test_description_conflicts():

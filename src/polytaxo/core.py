@@ -45,6 +45,7 @@ _doc_fields = {
     "on_conflict_arg": """on_conflict ("replace", "raise", or "skip", optional): Conflict resolution strategy. Defaults to "replace".""",
     "ignore_unmatched_intermediaries_arg": """ignore_unmatched_intermediaries (bool, optional): Whether to ignore unmatched intermediaries. Defaults to False.""",
     "with_alias_arg": """with_alias (bool, optional): Whether to consider aliases. Defaults to False.""",
+    "return_unmatched_suffix_arg": """return_unmatched_suffix (bool, optional): If True, return a tuple of (Description, unmatched_suffix). If False, raise an error if there are unmatched names. Defaults to False.""",
 }
 
 
@@ -179,6 +180,14 @@ def _best_match(
 
     # Select most specific match
     matches.sort(key=operator.itemgetter(1), reverse=True)
+
+    # Raise for a tie
+    if len(matches) > 1 and matches[0][1] == matches[1][1]:
+        raise ValueError(
+            f"Ambiguous match for {name_or_path} from anchor {quote(anchor.format())}: "
+            f"{matches[0][0].format()} and {matches[1][0].format()} have the same specificity"
+        )
+
     return matches[0][0]
 
 
@@ -699,6 +708,13 @@ class ClassNode(RealNode):
             self, name_or_path, self._find_all_virtual(name_or_path, with_alias)
         )
 
+    def _find_all_any_node(
+        self, path: Sequence[str], with_alias=False
+    ) -> Iterable[Tuple[BaseNode, int]]:
+        yield from self._find_all_class(path, with_alias=with_alias)
+        yield from self._find_all_tag(path, with_alias=with_alias)
+        yield from self._find_all_virtual(path, with_alias=with_alias)
+
     @fill_in_doc(_doc_fields)
     def find_any_node(
         self, name_or_path: Union[str, Sequence[str]], with_alias=False
@@ -714,36 +730,12 @@ class ClassNode(RealNode):
             Description: The parsed Description.
         """
 
-        name_or_path = _validate_name_or_path(name_or_path)
+        path = _validate_name_or_path(name_or_path)
 
-        if not with_alias:
-            try:
-                return self.find_class(name_or_path)
-            except NodeNotFoundError:
-                pass
-
-            try:
-                return self.find_tag(name_or_path)
-            except NodeNotFoundError:
-                pass
-
-            try:
-                return self.find_virtual(name_or_path)
-            except NodeNotFoundError:
-                pass
-
-            raise NodeNotFoundError(
-                f"Could not find {name_or_path} below {quote(self.format())}"
-            )
-
-        # Find all matching nodes
-        matches = []
-        matches.extend(self._find_all_class(name_or_path, with_alias=with_alias))
-        matches.extend(self._find_all_tag(name_or_path, with_alias=with_alias))
-        matches.extend(self._find_all_virtual(name_or_path, with_alias=with_alias))
+        matches = list(self._find_all_any_node(path, with_alias=with_alias))
 
         # Sort matches by specificy
-        return _best_match(self, name_or_path, matches)
+        return _best_match(self, path, matches)
 
     def format_tree(self, extra=None, virtuals=False) -> str:
         """Format the ClassNode and its children as a tree."""
@@ -780,23 +772,10 @@ class ClassNode(RealNode):
         self, name_or_path: Union[str, Sequence[str]], with_alias=False
     ) -> Union["ClassNode", "TagNode"]:
         """Find a real node (ClassNode or TagNode) by name or path."""
-        if not with_alias:
-            try:
-                return self.find_class(name_or_path)
-            except NodeNotFoundError:
-                pass
-
-            try:
-                return self.find_tag(name_or_path)
-            except NodeNotFoundError:
-                pass
-
-            raise NodeNotFoundError(f"{name_or_path} (anchor={quote(self.format())})")
-        else:
-            matches = []
-            matches.extend(self._find_all_class(name_or_path, with_alias=with_alias))
-            matches.extend(self._find_all_tag(name_or_path, with_alias=with_alias))
-            return _best_match(self, name_or_path, matches)
+        matches = []
+        matches.extend(self._find_all_class(name_or_path, with_alias=with_alias))
+        matches.extend(self._find_all_tag(name_or_path, with_alias=with_alias))
+        return _best_match(self, name_or_path, matches)
 
     def parse_description(
         self,
@@ -944,9 +923,69 @@ class Description:
         )
         return d
 
+    @classmethod
+    def _iter_lineage_candidates(
+        cls,
+        base_description: "Description",
+        names: Sequence[str],
+        *,
+        with_alias: bool,
+        on_conflict: TOnConflictLiteral,
+        ignore_unmatched_intermediaries: bool,
+        _unmatched_suffix: Tuple[str, ...] = (),
+        _base_specificy=0,
+    ) -> Iterator[Tuple["Description", Tuple[str, ...], int]]:
+        if not names:
+            yield base_description, _unmatched_suffix, _base_specificy
+            return
+
+        head, *tail = names
+
+        # Find head
+        node: BaseNode | None = None
+        for node, node_specificity in base_description.anchor._find_all_any_node(
+            (head,),
+            with_alias=with_alias,
+        ):
+            description = base_description.copy()
+            if isinstance(node, Descriptor):
+                description.add(node, on_conflict=on_conflict)
+            elif isinstance(node, VirtualNode):
+                description.add(node.description, on_conflict=on_conflict)
+            else:
+                raise ValueError(f"Unexpected node: {node}")
+
+            yield from cls._iter_lineage_candidates(
+                description,
+                tail,
+                with_alias=with_alias,
+                on_conflict=on_conflict,
+                ignore_unmatched_intermediaries=ignore_unmatched_intermediaries,
+                # If we matched a node, we reset unmatched_suffix
+                _unmatched_suffix=(),
+                _base_specificy=_base_specificy + node_specificity,
+            )
+
+        if ignore_unmatched_intermediaries:
+            # If we allow unmatched intermediaries, we can skip the first name and try to match the rest
+            yield from cls._iter_lineage_candidates(
+                base_description.copy(),
+                tail,
+                with_alias=with_alias,
+                on_conflict=on_conflict,
+                ignore_unmatched_intermediaries=ignore_unmatched_intermediaries,
+                # If we skip a name, we add it to unmatched_suffix
+                _unmatched_suffix=_unmatched_suffix + (head,),
+                _base_specificy=_base_specificy,
+            )
+        elif node is None:
+            # If we didn't match any node and we don't allow unmatched intermediaries, we yield the current description with the unmatched suffix
+            yield base_description, _unmatched_suffix + tuple(names), _base_specificy
+
     @overload
-    @staticmethod
+    @classmethod
     def from_lineage(
+        cls,
         anchor: ClassNode,
         names: Iterable[str],
         *,
@@ -954,11 +993,12 @@ class Description:
         on_conflict: TOnConflictLiteral = "replace",
         ignore_unmatched_intermediaries: bool = False,
         return_unmatched_suffix: Literal[True],
-    ) -> Tuple["Description", List[str]]: ...
+    ) -> Tuple["Description", Tuple[str, ...]]: ...
 
     @overload
-    @staticmethod
+    @classmethod
     def from_lineage(
+        cls,
         anchor: ClassNode,
         names: Iterable[str],
         *,
@@ -968,9 +1008,10 @@ class Description:
         return_unmatched_suffix: Literal[False] = False,
     ) -> "Description": ...
 
-    @staticmethod
+    @classmethod
     @fill_in_doc(_doc_fields)
     def from_lineage(
+        cls,
         anchor: ClassNode,
         names: Iterable[str],
         *,
@@ -978,7 +1019,7 @@ class Description:
         on_conflict: TOnConflictLiteral = "replace",
         ignore_unmatched_intermediaries: bool = False,
         return_unmatched_suffix: bool = False,
-    ) -> Tuple["Description", List[str]] | "Description":
+    ) -> Tuple["Description", Tuple[str, ...]] | "Description":
         """
         Parse a sequence of names into a Description object.
 
@@ -986,37 +1027,47 @@ class Description:
 
         Args:
             {anchor_arg}
-            names (iterable of str): ...
+            names (iterable of str): The sequence of names to parse into a Description.
             {with_alias_arg}
             {on_conflict_arg}
             {ignore_unmatched_intermediaries_arg}
+            {return_unmatched_suffix_arg}
 
         Returns:
             Description: The parsed Description.
         """
 
-        description = Description(anchor)
+        candidates: list[Tuple[Description, Tuple[str, ...], int]] = list(
+            cls._iter_lineage_candidates(
+                Description(anchor),
+                list(names),
+                with_alias=with_alias,
+                on_conflict=on_conflict,
+                ignore_unmatched_intermediaries=ignore_unmatched_intermediaries,
+            )
+        )
 
-        unmatched_names: List[str] = []
+        # Sort candidates by length of unmatched suffix (ascending) and specificity (descending)
+        candidates.sort(key=lambda c: (len(c[1]), -c[2]))
 
-        for name in names:
-            try:
-                # TODO: This should rather be parse_name() -> Descriptor | Description
-                node = description.anchor.find_any_node(name, with_alias)
-            except NodeNotFoundError:
-                if ignore_unmatched_intermediaries:
-                    unmatched_names.append(name)
-                    continue
-                raise
+        # Raise an error if a tie exists
+        best_description, best_unmatched_suffix, best_specificity = candidates[0]
+        for description, unmatched_suffix, specificity in candidates[1:]:
+            if description != best_description:
+                if specificity == best_specificity:
+                    raise ValueError(
+                        f"Ambiguous lineage: {'/'.join(names)} (tie between {best_description} ({best_unmatched_suffix}, {best_specificity}) and {description} ({unmatched_suffix}, {specificity}))"
+                    )
+                break
 
-            unmatched_names.clear()
+        description, unmatched_names, _ = candidates[0]
 
-            if isinstance(node, Descriptor):
-                description.add(node, on_conflict=on_conflict)
-            elif isinstance(node, VirtualNode):
-                description.add(node.description, on_conflict=on_conflict)
-            else:
-                raise ValueError(f"Unexpected node: {node}")
+        if not ignore_unmatched_intermediaries and unmatched_names:
+            # We didn't allow unmatched intermediaries, but we have some unmatched names,
+            # so unmatched_names[0] is the first node that was not found.
+            raise NodeNotFoundError(
+                f"Could not find {unmatched_names[0]} from anchor {quote(anchor.format())}"
+            )
 
         if return_unmatched_suffix:
             return description, unmatched_names
@@ -1240,9 +1291,9 @@ class Description:
 
     def format(self, anchor: ClassNode | None = None):
         # Sort qualifiers alphabetically for stable lookup
-        qualifiers = sorted(
-            [q.format(anchor=self.anchor, quoted=True) for q in self.qualifiers]
-        )
+        qualifiers = sorted([
+            q.format(anchor=self.anchor, quoted=True) for q in self.qualifiers
+        ])
 
         return " ".join([self.anchor.format(anchor, quoted=True)] + qualifiers)
 

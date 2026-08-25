@@ -343,15 +343,16 @@ class Taxonomy:
         on_conflict: TOnConflictLiteral = "replace",
         ignore_unmatched_intermediaries: bool = False,
         return_unmatched_suffix: bool = False,
-    ) -> Tuple[Description, List[str]] | Description:
+    ) -> Tuple[Description, Tuple[str, ...]] | Description:
         """
         Parse a sequence of names into a Description.
 
         Args:
-            names (iterable of str): ...
+            names (iterable of str): The sequence of names to parse into a Description.
             {with_alias_arg}
             {on_conflict_arg}
             {ignore_unmatched_intermediaries_arg}
+            {return_unmatched_suffix_arg}
 
         Returns:
             Description: The parsed Description.
