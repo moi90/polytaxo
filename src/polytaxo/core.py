@@ -154,13 +154,17 @@ class BaseNode:
             return quote(result)
         return result
 
-    def _matches_name(self, name: str, with_alias: bool) -> int:
+    def _matches_name(
+        self, name: str, *, has_active_parent: bool, with_alias: bool
+    ) -> int:
         """Check if the node matches the given name or alias."""
         if name.casefold() == self.name.casefold():
             return 1 + len(name)
 
         if with_alias:
-            return max((a.match(name) for a in self.aliases), default=0)
+            return max(
+                (a.match(name, has_active_parent) for a in self.aliases), default=0
+            )
 
         return 0
 
@@ -398,7 +402,12 @@ class TagNode(RealNode):
         raise ValueError(f"Tag without a class parent: {self.name}")  # pragma: no cover
 
     def _find_all_tag(
-        self, path: Sequence[str], with_alias=False, _base_specificy=0
+        self,
+        path: Sequence[str],
+        *,
+        _dist_active_parent=0,
+        _base_specificy=0,
+        with_alias=False,
     ) -> Iterable[Tuple["TagNode", int]]:
         """
         Find all TagNode instances matching the given path.
@@ -408,14 +417,18 @@ class TagNode(RealNode):
 
         name, *tail = path
 
-        specificy = self._matches_name(name, with_alias)
+        specificy = self._matches_name(
+            name, has_active_parent=_dist_active_parent <= 1, with_alias=with_alias
+        )
 
         if specificy:
             if tail:
                 # Descend into children with the tail of the path
                 for subtag in self.tags:
                     yield from subtag._find_all_tag(
-                        tail, with_alias, specificy + _base_specificy
+                        tail,
+                        _base_specificy=specificy + _base_specificy,
+                        with_alias=with_alias,
                     )
             else:
                 yield (self, specificy + _base_specificy)
@@ -423,7 +436,12 @@ class TagNode(RealNode):
             # If the current node does not match, descend into children with full path
             # (to allow shortened tag paths).
             for subtag in self.tags:
-                yield from subtag._find_all_tag(path, with_alias, _base_specificy)
+                yield from subtag._find_all_tag(
+                    path,
+                    _dist_active_parent=_dist_active_parent + 1,
+                    _base_specificy=_base_specificy,
+                    with_alias=with_alias,
+                )
 
     def find_tag(
         self, name_or_path: Union[str, Sequence[str]], with_alias=False
@@ -432,7 +450,9 @@ class TagNode(RealNode):
         name_or_path = _validate_name_or_path(name_or_path)
 
         return _best_match(
-            self, name_or_path, self._find_all_tag(name_or_path, with_alias)
+            self,
+            name_or_path,
+            self._find_all_tag(name_or_path, with_alias=with_alias),
         )
 
     def format_tree(self, extra_info=None) -> str:
@@ -618,7 +638,12 @@ class ClassNode(RealNode):
         return node
 
     def _find_all_class(
-        self, path: Sequence[str], with_alias=False, _base_specificy=0
+        self,
+        path: Sequence[str],
+        *,
+        _dist_active_parent=0,
+        _base_specificy=0,
+        with_alias=False,
     ) -> Iterable[Tuple["ClassNode", int]]:
         """
         Find all ClassNode instances matching the given path.
@@ -628,14 +653,21 @@ class ClassNode(RealNode):
 
         name, *tail = path
 
-        specificy = self._matches_name(name, with_alias)
+        specificy = self._matches_name(
+            name,
+            has_active_parent=_dist_active_parent <= 1,
+            with_alias=with_alias,
+        )
 
         if specificy:
             if tail:
                 # Descend into children with the tail of the path
                 for subclass in self.classes:
                     yield from subclass._find_all_class(
-                        tail, with_alias, specificy + _base_specificy
+                        tail,
+                        _dist_active_parent=0,
+                        _base_specificy=specificy + _base_specificy,
+                        with_alias=with_alias,
                     )
             else:
                 yield (self, specificy + _base_specificy)
@@ -643,10 +675,15 @@ class ClassNode(RealNode):
             # If the current node does not match, descend into children with with full path
             # (to allow shortened class paths).
             for subclass in self.classes:
-                yield from subclass._find_all_class(path, with_alias, _base_specificy)
+                yield from subclass._find_all_class(
+                    path,
+                    _dist_active_parent=_dist_active_parent + 1,
+                    _base_specificy=_base_specificy,
+                    with_alias=with_alias,
+                )
 
     def _find_all_tag(
-        self, path: Sequence[str], with_alias=False
+        self, path: Sequence[str], *, with_alias=False
     ) -> Iterable[Tuple["TagNode", int]]:
         """
         Find all TagNode instances matching the given path.
@@ -656,43 +693,60 @@ class ClassNode(RealNode):
 
         # Search in the current node's tags
         for tag in self.tags:
-            yield from tag._find_all_tag(path, with_alias)
+            yield from tag._find_all_tag(path, with_alias=with_alias)
 
         # Also search in the parent node's tags
         if self.parent is not None:
-            yield from self.parent._find_all_tag(path, with_alias)
+            yield from self.parent._find_all_tag(path, with_alias=with_alias)
 
     def _find_all_virtual(
-        self, path: Sequence[str], with_alias=False, _base_specificy=0
+        self,
+        path: Sequence[str],
+        *,
+        _dist_active_parent=0,
+        with_alias=False,
+        base_specificy=0,
     ) -> Iterable[Tuple["VirtualNode", int]]:
         """
         Find all VirtualNode instances matching the given path.
 
-        `path` is a sequence of names, which can be class names or virtual node names.
+        `path` is a sequence of virtual node names.
         """
 
         name, *tail = path
 
         if tail:
-            # If there are more names in the path, we might need to match the current node and descend into its subclasses
-            specificy = self._matches_name(name, with_alias)
+            # If there is a tail, name might be the current node
+            specificy = self._matches_name(
+                name, has_active_parent=_dist_active_parent <= 1, with_alias=with_alias
+            )
 
             # If the current node matches, we descend into it's subclasses to find the rest of the path
-            if specificy and tail:
+            if specificy:
                 for subclass in self.classes:
                     yield from subclass._find_all_virtual(
-                        tail, with_alias, specificy + _base_specificy
+                        tail,
+                        with_alias=with_alias,
+                        base_specificy=specificy + base_specificy,
                     )
         else:
             # We don't have a tail, so the virtual nodes of the current node are the only candidates
             for virtual in self.virtuals:
-                specificy = virtual._matches_name(name, with_alias)
+                specificy = virtual._matches_name(
+                    name,
+                    has_active_parent=_dist_active_parent <= 1,
+                    with_alias=with_alias,
+                )
                 if specificy:
                     yield (virtual, specificy)
 
         # Virtual nodes behave like tags in that they might also be defined on one of the parent nodes.
         if self.parent is not None:
-            yield from self.parent._find_all_virtual(path, with_alias, _base_specificy)
+            yield from self.parent._find_all_virtual(
+                path,
+                with_alias=with_alias,
+                base_specificy=base_specificy,
+            )
 
     def find_class(
         self, name_or_path: Union[str, Sequence[str]], with_alias=False
@@ -701,7 +755,11 @@ class ClassNode(RealNode):
         name_or_path = _validate_name_or_path(name_or_path)
 
         return _best_match(
-            self, name_or_path, self._find_all_class(name_or_path, with_alias)
+            self,
+            name_or_path,
+            self._find_all_class(
+                name_or_path, _dist_active_parent=0, with_alias=with_alias
+            ),
         )
 
     def find_tag(self, name_or_path: Union[str, Sequence[str]]) -> TagNode:
@@ -730,15 +788,23 @@ class ClassNode(RealNode):
     ) -> VirtualNode:
         """Find specified virtual node in this node or its parents."""
         return _best_match(
-            self, name_or_path, self._find_all_virtual(name_or_path, with_alias)
+            self,
+            name_or_path,
+            self._find_all_virtual(
+                name_or_path, _dist_active_parent=True, with_alias=with_alias
+            ),
         )
 
     def _find_all_any_node(
         self, path: Sequence[str], with_alias=False
     ) -> Iterable[Tuple[BaseNode, int]]:
-        yield from self._find_all_class(path, with_alias=with_alias)
+        yield from self._find_all_class(
+            path, _dist_active_parent=0, with_alias=with_alias
+        )
         yield from self._find_all_tag(path, with_alias=with_alias)
-        yield from self._find_all_virtual(path, with_alias=with_alias)
+        yield from self._find_all_virtual(
+            path, _dist_active_parent=0, with_alias=with_alias
+        )
 
     @fill_in_doc(_doc_fields)
     def find_any_node(
@@ -798,7 +864,11 @@ class ClassNode(RealNode):
     ) -> Union["ClassNode", "TagNode"]:
         """Find a real node (ClassNode or TagNode) by name or path."""
         matches = []
-        matches.extend(self._find_all_class(name_or_path, with_alias=with_alias))
+        matches.extend(
+            self._find_all_class(
+                name_or_path, _dist_active_parent=0, with_alias=with_alias
+            )
+        )
         matches.extend(self._find_all_tag(name_or_path, with_alias=with_alias))
         return _best_match(self, name_or_path, matches)
 

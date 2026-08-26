@@ -17,12 +17,24 @@ def calc_specificy(pattern: str):
 
 class Alias:
     def __init__(self, pattern: str) -> None:
-        self.pattern = pattern.casefold()
-        self._match = re.compile(fnmatch.translate(self.pattern)).match
-        self.specificy = calc_specificy(self.pattern)
+        self.pattern = pattern = pattern.casefold()
 
-    def match(self, name: str) -> int:
+        # If the pattern starts with a slash, it is considered...
+        if pattern.startswith("/"):
+            self._is_anchored = True
+            pattern = pattern[1:]
+        else:
+            self._is_anchored = False
+
+        self._match = re.compile(fnmatch.translate(pattern)).match
+        self.specificy = calc_specificy(pattern)
+
+    def match(self, name: str, has_active_parent=False) -> int:
         """Test whether `name` matches `pattern` and return specificy."""
+
+        if self._is_anchored and not has_active_parent:
+            return 0
+
         name = name.casefold()
         if self._match(name):
             return self.specificy

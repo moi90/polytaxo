@@ -321,7 +321,7 @@ class Taxonomy:
         on_conflict: TOnConflictLiteral = "replace",
         ignore_unmatched_intermediaries: bool = False,
         return_unmatched_suffix: Literal[True],
-    ) -> Tuple["Description", List[str]]: ...
+    ) -> Tuple["Description", Tuple[str, ...]]: ...
 
     @overload
     def parse_lineage(
