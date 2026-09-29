@@ -10,6 +10,11 @@ from tests.data import taxonomy_dict
 from polytaxo.core import Description, NeverDescriptor
 
 
+def test_from_dict_to_dict_roundtrip():
+    taxonomy = Taxonomy.from_dict(taxonomy_dict)
+    assert taxonomy.to_dict() == taxonomy_dict
+
+
 def test_poly_taxonomy():
     # A concrete example of a Taxonomy
     poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
@@ -19,9 +24,6 @@ def test_poly_taxonomy():
     assert poly_taxonomy.root.name == ""
     poly_taxonomy.root.find_class(("", "Copepoda"))
     poly_taxonomy.root.find_real_node(("", "Copepoda"))
-
-    # Test roundtripping
-    assert Taxonomy.from_dict(poly_taxonomy.to_dict()) == poly_taxonomy
 
     # Get a certain description
     Calanus_male_lateral = poly_taxonomy.parse_description(
@@ -249,14 +251,12 @@ def test_parse_lineage_strict_does_not_skip_unmatched_prefix():
 
 
 def test_find_any_node_raises_on_equal_specificity_tie():
-    poly_taxonomy = Taxonomy.from_dict(
-        {
-            "classes": {
-                "A": {"alias": "x"},
-                "B": {"alias": "x"},
-            }
+    poly_taxonomy = Taxonomy.from_dict({
+        "classes": {
+            "A": {"alias": "x"},
+            "B": {"alias": "x"},
         }
-    )
+    })
 
     with pytest.raises(ValueError, match="Ambiguous match"):
         poly_taxonomy.root.find_any_node("x", with_alias=True)

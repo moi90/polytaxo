@@ -265,7 +265,7 @@ class Taxonomy:
 
     def to_dict(self) -> Mapping:
         """Convert the PolyTaxonomy to a dictionary representation."""
-        return {self.root.name: self.root.to_dict()}
+        return self.root.to_dict()
 
     def parse_description(
         self,

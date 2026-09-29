@@ -250,6 +250,16 @@ class RealNode(BaseNode, CoreDescriptor):
         d: Dict[str, Any] = {}
         if self.index is not None:
             d["index"] = self.index
+
+        if self.meta:
+            d["meta"] = self.meta
+
+        if self.aliases:
+            if len(self.aliases) == 1:
+                d["alias"] = self.aliases[0].pattern
+            else:
+                d["alias"] = [a.pattern for a in self.aliases]
+
         return d
 
     @property
@@ -599,11 +609,6 @@ class ClassNode(RealNode):
     def to_dict(self):
         """Convert the ClassNode to a dictionary representation."""
         d = super().to_dict()
-        if self.aliases:
-            if isinstance(self.aliases, str) or len(self.aliases) > 1:
-                d["alias"] = [a.pattern for a in self.aliases]
-            else:
-                d["alias"] = self.aliases[0].pattern  # type: ignore
 
         if self.classes:
             d["classes"] = {c.name: c.to_dict() for c in self.classes}
@@ -612,7 +617,9 @@ class ClassNode(RealNode):
             d["tags"] = {t.name: t.to_dict() for t in self.tags}
 
         if self.virtuals:
-            d["virtuals"] = {v.name: str(v.description) for v in self.virtuals}
+            d["virtuals"] = {
+                v.name: v.description.format(anchor=self) for v in self.virtuals
+            }
         return d
 
     @property
@@ -1389,6 +1396,9 @@ class Description:
         qualifiers = sorted([
             q.format(anchor=self.anchor, quoted=True) for q in self.qualifiers
         ])
+
+        if anchor == self.anchor:
+            return " ".join(qualifiers)
 
         return " ".join([self.anchor.format(anchor, quoted=True)] + qualifiers)
 

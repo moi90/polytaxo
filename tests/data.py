@@ -2,6 +2,7 @@ taxonomy_dict = {
     "tags": {
         "cut": {
             "alias": "cropped",
+            "meta": {"description": "A cropped image of the organism"},
         },
     },
     "classes": {
@@ -25,6 +26,7 @@ taxonomy_dict = {
                 "view": {
                     "tags": {
                         "lateral": {
+                            "alias": "side",
                             "tags": {"left": {}, "right": {}},
                         },
                         "frontal": {},
@@ -33,7 +35,7 @@ taxonomy_dict = {
                 },
                 "sex": {
                     "tags": {
-                        "male": {},
+                        "male": {"alias": "m"},
                         "female": {},
                     }
                 },
@@ -48,8 +50,8 @@ taxonomy_dict = {
                 },
             },
             "virtuals": {
-                "male+lateral": "male lateral",
-                "male Calanus": "Calanus male",
+                "male+lateral": "sex:male view:lateral",
+                "male Calanus": "Calanus sex:male",
                 "cropped": "cut",
                 "cvstage": "stage:CV",
             },
