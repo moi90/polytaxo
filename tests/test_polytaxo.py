@@ -15,6 +15,15 @@ def test_from_dict_to_dict_roundtrip():
     assert taxonomy.to_dict() == taxonomy_dict
 
 
+def test_poly_taxonomy_flat_roundtrip():
+    taxonomy = Taxonomy.from_dict(taxonomy_dict)
+
+    flat_dict = taxonomy.to_flat_dict()
+    roundtripped = Taxonomy.from_flat_dict(flat_dict)
+
+    assert roundtripped.to_dict() == taxonomy.to_dict()
+
+
 def test_poly_taxonomy():
     # A concrete example of a Taxonomy
     poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)

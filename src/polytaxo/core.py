@@ -143,10 +143,11 @@ class BaseNode:
         def build():
             sep = ""
             for n in precursors:
-                yield sep + n.name
-                if isinstance(n, TagNode):
+                if sep and isinstance(n, TagNode):
                     sep = ":"
-                else:
+                yield sep + n.name
+
+                if not sep:
                     sep = "/"
 
         result = "".join(build())
@@ -383,10 +384,10 @@ class TagNode(RealNode):
 
         return tag_node
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, exclude_real_children: bool = False) -> Dict[str, Any]:
         """Convert the TagNode to a dictionary representation."""
         d = super().to_dict()
-        if self.tags:
+        if not exclude_real_children and self.tags:
             d["tags"] = {c.name: c.to_dict() for c in self.tags}
 
         return d
@@ -567,6 +568,16 @@ class ClassNode(RealNode):
         self.tags: List[TagNode] = []
         self.virtuals: List[VirtualNode] = []
 
+    def _add_virtuals_from_dict(self, virtuals: Mapping[str, str]):
+        for virtual_name, virtual_description in virtuals.items():
+            try:
+                description = self.parse_description(virtual_description)
+                self.add_virtual(VirtualNode(virtual_name, self, description))
+            except Exception as exc:
+                raise ValueError(
+                    f"Error parsing description {virtual_description!r} of virtual node '{self}/{virtual_name}'"
+                ) from exc
+
     @staticmethod
     def from_dict(
         name: str,
@@ -595,25 +606,18 @@ class ClassNode(RealNode):
             node.add_class(ClassNode.from_dict(class_name, class_data, node))
 
         # Finally, create virtual nodes (which may reference tags and children)
-        for virtual_name, virtual_description in (data.get("virtuals") or {}).items():
-            try:
-                description = node.parse_description(virtual_description)
-                node.add_virtual(VirtualNode(virtual_name, node, description))
-            except Exception as exc:
-                raise ValueError(
-                    f"Error parsing description {virtual_description!r} of virtual node '{node}/{virtual_name}'"
-                ) from exc
+        node._add_virtuals_from_dict(data.get("virtuals") or {})
 
         return node
 
-    def to_dict(self):
+    def to_dict(self, exclude_real_children: bool = False):
         """Convert the ClassNode to a dictionary representation."""
         d = super().to_dict()
 
-        if self.classes:
+        if not exclude_real_children and self.classes:
             d["classes"] = {c.name: c.to_dict() for c in self.classes}
 
-        if self.tags:
+        if not exclude_real_children and self.tags:
             d["tags"] = {t.name: t.to_dict() for t in self.tags}
 
         if self.virtuals:
