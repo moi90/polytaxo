@@ -83,6 +83,9 @@ class BaseNode:
         parent: Optional["BaseNode"],
         aliases: Optional[Iterable[str]] = None,
     ) -> None:
+        if not name and parent is not None:
+            raise ValueError("Only the root node is allowed an empty name.")
+
         if "/" in name or ":" in name:
             raise ValueError(
                 f"Node name {name!r} contains reserved path delimiters '/' or ':'."
@@ -572,9 +575,6 @@ class ClassNode(RealNode):
         meta: Optional[Mapping] = None,
         aliases: Optional[Iterable[str]] = None,
     ) -> None:
-        if not name and parent is not None:
-            raise ValueError("Only the root node is allowed an empty name.")
-
         super().__init__(name, parent, index, meta, aliases)
         self.classes: List["ClassNode"] = []
         self.tags: List[TagNode] = []
@@ -584,11 +584,11 @@ class ClassNode(RealNode):
         for virtual_name, virtual_description in virtuals.items():
             try:
                 description = self.parse_description(virtual_description)
-                self.add_virtual(VirtualNode(virtual_name, self, description))
             except Exception as exc:
                 raise ValueError(
                     f"Error parsing description {virtual_description!r} of virtual node '{self}/{virtual_name}'"
                 ) from exc
+            self.add_virtual(VirtualNode(virtual_name, self, description))
 
     @staticmethod
     def from_dict(

@@ -44,6 +44,17 @@ def test_from_dict_rejects_names_with_reserved_delimiters(invalid_name):
         Taxonomy.from_dict({"classes": {invalid_name: {}}})
 
 
+def test_from_dict_rejects_empty_names_for_non_root_nodes():
+    with pytest.raises(ValueError, match="Only the root node is allowed an empty name"):
+        Taxonomy.from_dict({"classes": {"": {}}})
+
+    with pytest.raises(ValueError, match="Only the root node is allowed an empty name"):
+        Taxonomy.from_dict({"classes": {"A": {"tags": {"": {}}}}})
+
+    with pytest.raises(ValueError, match="Only the root node is allowed an empty name"):
+        Taxonomy.from_dict({"classes": {"A": {"virtuals": {"": "A"}}}})
+
+
 def test_poly_taxonomy():
     # A concrete example of a Taxonomy
     poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
