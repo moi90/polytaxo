@@ -301,6 +301,8 @@ class Taxonomy:
         deferred_virtuals: list[tuple[ClassNode, Any]] = []
 
         for path, data in flat_dict.items():
+            # Make a copy to avoid modifying the original
+            data = dict(data)
             virtuals = data.pop("virtuals", None)
 
             if not isinstance(path, str):
@@ -312,31 +314,30 @@ class Taxonomy:
                     raise ValueError("Root node already defined")
 
                 root = ClassNode.from_dict("", data, None)
-                continue
+            else:
+                tokens = list(token_pattern.finditer(path))
 
-            tokens = list(token_pattern.finditer(path))
+                if not tokens or "".join(m.group(0) for m in tokens) != path:
+                    raise ValueError(
+                        "Invalid flat taxonomy path "
+                        f"{path!r}. Expected [/<class-name>]*[:<tag-name>]*"
+                    )
 
-            if not tokens or "".join(m.group(0) for m in tokens) != path:
-                raise ValueError(
-                    "Invalid flat taxonomy path "
-                    f"{path!r}. Expected [/<class-name>]*[:<tag-name>]*"
-                )
+                # If the root node is not defined yet, create an empty root node
+                if root is None:
+                    root = ClassNode("", None, None)
 
-            # If the root node is not defined yet, create an empty root node
-            if root is None:
-                root = ClassNode("", None, None)
+                node: ClassNode | TagNode = root
 
-            node: ClassNode | TagNode = root
+                # Iterate through all tokens except the last one, which is the node to add data to
+                for token in tokens[:-1]:
+                    separator, name = token.groups()
 
-            # Iterate through all tokens except the last one, which is the node to add data to
-            for token in tokens[:-1]:
-                separator, name = token.groups()
+                    node = _get_or_add_node(path, node, name, separator == "/", {})
 
-                node = _get_or_add_node(path, node, name, separator == "/", {})
-
-            # Add data to the last node
-            separator, name = tokens[-1].groups()
-            node = _get_or_add_node(path, node, name, separator == "/", data)
+                # Add data to the last node
+                separator, name = tokens[-1].groups()
+                node = _get_or_add_node(path, node, name, separator == "/", data)
 
             if virtuals is not None:
                 deferred_virtuals.append((node, virtuals))
@@ -345,7 +346,7 @@ class Taxonomy:
         for node, virtuals in deferred_virtuals:
             node._add_virtuals_from_dict(virtuals)
 
-        return cls(root)
+        return cls(root or ClassNode("", None, None))
 
     @classmethod
     def from_yaml(cls, yaml_fn):
