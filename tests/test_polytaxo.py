@@ -10,6 +10,65 @@ from tests.data import taxonomy_dict
 from polytaxo.core import Description, NeverDescriptor
 
 
+def test_from_dict_to_dict_roundtrip():
+    taxonomy = Taxonomy.from_dict(taxonomy_dict)
+    assert taxonomy.to_dict() == taxonomy_dict
+
+
+def test_from_dict_to_dict_roundtrip_preserves_alias_spelling():
+    taxonomy_with_mixed_case_alias = {
+        "classes": {
+            "Copepoda": {
+                "alias": "UPPER",
+            }
+        }
+    }
+
+    taxonomy = Taxonomy.from_dict(taxonomy_with_mixed_case_alias)
+
+    assert taxonomy.to_dict() == taxonomy_with_mixed_case_alias
+
+
+def test_poly_taxonomy_flat_roundtrip():
+    taxonomy = Taxonomy.from_dict(taxonomy_dict)
+
+    flat_dict = taxonomy.to_flat_dict()
+    roundtripped = Taxonomy.from_flat_dict(flat_dict)
+
+    assert roundtripped.to_dict() == taxonomy.to_dict()
+
+
+def test_from_flat_dict_raises_for_out_of_order_parent_data():
+    flat_dict = {
+        "/Copepoda/Calanus": {},
+        "/Copepoda": {
+            "alias": "copepods",
+            "index": 42,
+            "meta": {"rank": "subclass"},
+        },
+    }
+
+    with pytest.raises(ValueError, match="Define parent paths before descendants"):
+        Taxonomy.from_flat_dict(flat_dict)
+
+
+@pytest.mark.parametrize("invalid_name", ["A/B", "A:B"])
+def test_from_dict_rejects_names_with_reserved_delimiters(invalid_name):
+    with pytest.raises(ValueError, match="reserved path delimiters"):
+        Taxonomy.from_dict({"classes": {invalid_name: {}}})
+
+
+def test_from_dict_rejects_empty_names_for_non_root_nodes():
+    with pytest.raises(ValueError, match="Only the root node is allowed an empty name"):
+        Taxonomy.from_dict({"classes": {"": {}}})
+
+    with pytest.raises(ValueError, match="Only the root node is allowed an empty name"):
+        Taxonomy.from_dict({"classes": {"A": {"tags": {"": {}}}}})
+
+    with pytest.raises(ValueError, match="Only the root node is allowed an empty name"):
+        Taxonomy.from_dict({"classes": {"A": {"virtuals": {"": "A"}}}})
+
+
 def test_poly_taxonomy():
     # A concrete example of a Taxonomy
     poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
@@ -19,9 +78,6 @@ def test_poly_taxonomy():
     assert poly_taxonomy.root.name == ""
     poly_taxonomy.root.find_class(("", "Copepoda"))
     poly_taxonomy.root.find_real_node(("", "Copepoda"))
-
-    # Test roundtripping
-    assert Taxonomy.from_dict(poly_taxonomy.to_dict()) == poly_taxonomy
 
     # Get a certain description
     Calanus_male_lateral = poly_taxonomy.parse_description(
@@ -249,14 +305,12 @@ def test_parse_lineage_strict_does_not_skip_unmatched_prefix():
 
 
 def test_find_any_node_raises_on_equal_specificity_tie():
-    poly_taxonomy = Taxonomy.from_dict(
-        {
-            "classes": {
-                "A": {"alias": "x"},
-                "B": {"alias": "x"},
-            }
+    poly_taxonomy = Taxonomy.from_dict({
+        "classes": {
+            "A": {"alias": "x"},
+            "B": {"alias": "x"},
         }
-    )
+    })
 
     with pytest.raises(ValueError, match="Ambiguous match"):
         poly_taxonomy.root.find_any_node("x", with_alias=True)

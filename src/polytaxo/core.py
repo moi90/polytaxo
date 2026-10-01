@@ -83,6 +83,14 @@ class BaseNode:
         parent: Optional["BaseNode"],
         aliases: Optional[Iterable[str]] = None,
     ) -> None:
+        if not name and parent is not None:
+            raise ValueError("Only the root node is allowed an empty name.")
+
+        if "/" in name or ":" in name:
+            raise ValueError(
+                f"Node name {name!r} contains reserved path delimiters '/' or ':'."
+            )
+
         self.name = name
         self.parent = parent
 
@@ -143,10 +151,11 @@ class BaseNode:
         def build():
             sep = ""
             for n in precursors:
-                yield sep + n.name
-                if isinstance(n, TagNode):
+                if sep and isinstance(n, TagNode):
                     sep = ":"
-                else:
+                yield sep + n.name
+
+                if not sep:
                     sep = "/"
 
         result = "".join(build())
@@ -245,11 +254,24 @@ class RealNode(BaseNode, CoreDescriptor):
 
         self.meta = meta
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, exclude: Optional[set] = None) -> Dict[str, Any]:
         """Convert the node to a dictionary representation."""
+        if exclude is None:
+            exclude = set()
+
         d: Dict[str, Any] = {}
-        if self.index is not None:
+        if self.index is not None and "index" not in exclude:
             d["index"] = self.index
+
+        if self.meta and "meta" not in exclude:
+            d["meta"] = self.meta
+
+        if self.aliases and "alias" not in exclude:
+            if len(self.aliases) == 1:
+                d["alias"] = self.aliases[0].pattern
+            else:
+                d["alias"] = [a.pattern for a in self.aliases]
+
         return d
 
     @property
@@ -373,10 +395,14 @@ class TagNode(RealNode):
 
         return tag_node
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, exclude: Optional[set] = None) -> Dict[str, Any]:
         """Convert the TagNode to a dictionary representation."""
-        d = super().to_dict()
-        if self.tags:
+        if exclude is None:
+            exclude = set()
+
+        d = super().to_dict(exclude=exclude)
+
+        if self.tags and "tags" not in exclude:
             d["tags"] = {c.name: c.to_dict() for c in self.tags}
 
         return d
@@ -549,13 +575,20 @@ class ClassNode(RealNode):
         meta: Optional[Mapping] = None,
         aliases: Optional[Iterable[str]] = None,
     ) -> None:
-        if not name and parent is not None:
-            raise ValueError("Only the root node is allowed an empty name.")
-
         super().__init__(name, parent, index, meta, aliases)
         self.classes: List["ClassNode"] = []
         self.tags: List[TagNode] = []
         self.virtuals: List[VirtualNode] = []
+
+    def _add_virtuals_from_dict(self, virtuals: Mapping[str, str]):
+        for virtual_name, virtual_description in virtuals.items():
+            try:
+                description = self.parse_description(virtual_description)
+            except Exception as exc:
+                raise ValueError(
+                    f"Error parsing description {virtual_description!r} of virtual node '{self}/{virtual_name}'"
+                ) from exc
+            self.add_virtual(VirtualNode(virtual_name, self, description))
 
     @staticmethod
     def from_dict(
@@ -585,34 +618,29 @@ class ClassNode(RealNode):
             node.add_class(ClassNode.from_dict(class_name, class_data, node))
 
         # Finally, create virtual nodes (which may reference tags and children)
-        for virtual_name, virtual_description in (data.get("virtuals") or {}).items():
-            try:
-                description = node.parse_description(virtual_description)
-                node.add_virtual(VirtualNode(virtual_name, node, description))
-            except Exception as exc:
-                raise ValueError(
-                    f"Error parsing description {virtual_description!r} of virtual node '{node}/{virtual_name}'"
-                ) from exc
+        node._add_virtuals_from_dict(data.get("virtuals") or {})
 
         return node
 
-    def to_dict(self):
+    def to_dict(self, exclude: Optional[set] = None) -> Dict[str, Any]:
         """Convert the ClassNode to a dictionary representation."""
-        d = super().to_dict()
-        if self.aliases:
-            if isinstance(self.aliases, str) or len(self.aliases) > 1:
-                d["alias"] = [a.pattern for a in self.aliases]
-            else:
-                d["alias"] = self.aliases[0].pattern  # type: ignore
 
-        if self.classes:
+        if exclude is None:
+            exclude = set()
+
+        d = super().to_dict(exclude=exclude)
+
+        if self.classes and "classes" not in exclude:
             d["classes"] = {c.name: c.to_dict() for c in self.classes}
 
-        if self.tags:
+        if self.tags and "tags" not in exclude:
             d["tags"] = {t.name: t.to_dict() for t in self.tags}
 
-        if self.virtuals:
-            d["virtuals"] = {v.name: str(v.description) for v in self.virtuals}
+        if self.virtuals and "virtuals" not in exclude:
+            d["virtuals"] = {
+                v.name: v.description.format(anchor=self) for v in self.virtuals
+            }
+
         return d
 
     @property
@@ -1389,6 +1417,9 @@ class Description:
         qualifiers = sorted([
             q.format(anchor=self.anchor, quoted=True) for q in self.qualifiers
         ])
+
+        if anchor == self.anchor:
+            return " ".join(qualifiers)
 
         return " ".join([self.anchor.format(anchor, quoted=True)] + qualifiers)
 

@@ -1,11 +1,10 @@
-import operator as op
-from collections import defaultdict
+import re
 from typing import (
+    Any,
     Iterable,
     List,
     Literal,
     Mapping,
-    Optional,
     Sequence,
     Tuple,
     Union,
@@ -249,11 +248,109 @@ class Taxonomy:
 
     @classmethod
     def from_dict(cls, tree_dict: Mapping):
-        """Create a PolyTaxonomy from a dictionary representation."""
+        """Create a PolyTaxonomy from a nested dictionary representation."""
 
         root = ClassNode.from_dict("", tree_dict, None)
 
         return cls(root)
+
+    @classmethod
+    def from_flat_dict(cls, flat_dict: Mapping[str, Any]):
+        """Create a PolyTaxonomy from a flat dictionary representation.
+
+        [/<class-name>]*[:<tag-name>]* => {data}
+        """
+
+        token_pattern = re.compile(r"([/:])([^/:]+)")
+
+        def _get_or_add_node(
+            path: str,
+            node: ClassNode | TagNode,
+            name: str,
+            is_class: bool,
+            data: Mapping[str, Any],
+        ) -> ClassNode | TagNode:
+            if is_class:
+                if not isinstance(node, ClassNode):
+                    raise ValueError(
+                        f"Invalid flat taxonomy path {path}: class segment cannot follow a tag segment"
+                    )
+                for child in node.classes:
+                    if child.name == name:
+                        if data:
+                            raise ValueError(
+                                f"Duplicate class node {name!r} in flat taxonomy path {path!r}. "
+                                "Define parent paths before descendants."
+                            )
+                        return child
+                return node.add_class(ClassNode.from_dict(name, data, node))
+
+            for child in node.tags:
+                if child.name == name:
+                    if data:
+                        raise ValueError(
+                            f"Duplicate tag node {name!r} in flat taxonomy path {path!r}. "
+                            "Define parent paths before descendants."
+                        )
+                    return child
+
+            return node.add_tag(TagNode.from_dict(name, data, node))
+
+        root = None
+
+        deferred_virtuals: list[tuple[ClassNode, Any]] = []
+
+        for path, data in flat_dict.items():
+            # Make a copy to avoid modifying the original
+            data = dict(data)
+            virtuals = data.pop("virtuals", None)
+
+            if not isinstance(path, str):
+                raise TypeError(f"Expected string key, got {type(path).__name__}")
+
+            # If the entry has an empty path, it is the root node
+            if not path:
+                if root is not None:
+                    raise ValueError("Root node already defined")
+
+                node = root = ClassNode.from_dict("", data, None)
+            else:
+                tokens = list(token_pattern.finditer(path))
+
+                if not tokens or "".join(m.group(0) for m in tokens) != path:
+                    raise ValueError(
+                        "Invalid flat taxonomy path "
+                        f"{path!r}. Expected [/<class-name>]*[:<tag-name>]*"
+                    )
+
+                # If the root node is not defined yet, create an empty root node
+                if root is None:
+                    root = ClassNode("", None, None)
+
+                node: ClassNode | TagNode = root
+
+                # Iterate through all tokens except the last one, which is the node to add data to
+                for token in tokens[:-1]:
+                    separator, name = token.groups()
+
+                    node = _get_or_add_node(path, node, name, separator == "/", {})
+
+                # Add data to the last node
+                separator, name = tokens[-1].groups()
+                node = _get_or_add_node(path, node, name, separator == "/", data)
+
+            if virtuals is not None:
+                if not isinstance(node, ClassNode):
+                    raise ValueError(
+                        f"Virtual nodes cannot be defined on tag path {path!r}"
+                    )
+                deferred_virtuals.append((node, virtuals))
+
+        # Finally, create virtual nodes (which may reference tags and children)
+        for node, virtuals in deferred_virtuals:
+            node._add_virtuals_from_dict(virtuals)
+
+        return cls(root or ClassNode("", None, None))
 
     @classmethod
     def from_yaml(cls, yaml_fn):
@@ -265,7 +362,23 @@ class Taxonomy:
 
     def to_dict(self) -> Mapping:
         """Convert the PolyTaxonomy to a dictionary representation."""
-        return {self.root.name: self.root.to_dict()}
+        return self.root.to_dict()
+
+    def to_flat_dict(self) -> Mapping[str, Any]:
+        """Convert the PolyTaxonomy to a flat dictionary representation.
+
+        [/<class-name>]*[:<tag-name>]* => {data}
+        """
+        flat_dict: dict[str, Any] = {}
+
+        for node in self.root.walk():
+            node_dict = node.to_dict(exclude={"classes", "tags"})
+            if node.real_children and not node_dict:
+                continue
+
+            flat_dict[node.format()] = node_dict
+
+        return flat_dict
 
     def parse_description(
         self,
