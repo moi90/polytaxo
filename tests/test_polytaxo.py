@@ -38,6 +38,12 @@ def test_from_flat_dict_raises_for_out_of_order_parent_data():
         Taxonomy.from_flat_dict(flat_dict)
 
 
+@pytest.mark.parametrize("invalid_name", ["A/B", "A:B"])
+def test_from_dict_rejects_names_with_reserved_delimiters(invalid_name):
+    with pytest.raises(ValueError, match="reserved path delimiters"):
+        Taxonomy.from_dict({"classes": {invalid_name: {}}})
+
+
 def test_poly_taxonomy():
     # A concrete example of a Taxonomy
     poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)

@@ -83,6 +83,11 @@ class BaseNode:
         parent: Optional["BaseNode"],
         aliases: Optional[Iterable[str]] = None,
     ) -> None:
+        if "/" in name or ":" in name:
+            raise ValueError(
+                f"Node name {name!r} contains reserved path delimiters '/' or ':'."
+            )
+
         self.name = name
         self.parent = parent
 
