@@ -340,7 +340,10 @@ class Taxonomy:
                 node = _get_or_add_node(path, node, name, separator == "/", data)
 
             if virtuals is not None:
-                assert isinstance(node, ClassNode)
+                if not isinstance(node, ClassNode):
+                    raise ValueError(
+                        f"Virtual nodes cannot be defined on tag path {path!r}"
+                    )
                 deferred_virtuals.append((node, virtuals))
 
         # Finally, create virtual nodes (which may reference tags and children)
