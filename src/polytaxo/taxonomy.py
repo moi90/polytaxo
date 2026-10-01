@@ -313,7 +313,7 @@ class Taxonomy:
                 if root is not None:
                     raise ValueError("Root node already defined")
 
-                root = ClassNode.from_dict("", data, None)
+                node = root = ClassNode.from_dict("", data, None)
             else:
                 tokens = list(token_pattern.finditer(path))
 
@@ -340,6 +340,7 @@ class Taxonomy:
                 node = _get_or_add_node(path, node, name, separator == "/", data)
 
             if virtuals is not None:
+                assert isinstance(node, ClassNode)
                 deferred_virtuals.append((node, virtuals))
 
         # Finally, create virtual nodes (which may reference tags and children)
