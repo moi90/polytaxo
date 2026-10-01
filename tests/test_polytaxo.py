@@ -15,6 +15,20 @@ def test_from_dict_to_dict_roundtrip():
     assert taxonomy.to_dict() == taxonomy_dict
 
 
+def test_from_dict_to_dict_roundtrip_preserves_alias_spelling():
+    taxonomy_with_mixed_case_alias = {
+        "classes": {
+            "Copepoda": {
+                "alias": "UPPER",
+            }
+        }
+    }
+
+    taxonomy = Taxonomy.from_dict(taxonomy_with_mixed_case_alias)
+
+    assert taxonomy.to_dict() == taxonomy_with_mixed_case_alias
+
+
 def test_poly_taxonomy_flat_roundtrip():
     taxonomy = Taxonomy.from_dict(taxonomy_dict)
 
