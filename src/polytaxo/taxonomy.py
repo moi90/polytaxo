@@ -369,7 +369,7 @@ class Taxonomy:
         flat_dict: dict[str, Any] = {}
 
         for node in self.root.walk():
-            node_dict = node.to_dict(exclude_real_children=True)
+            node_dict = node.to_dict(exclude={"classes", "tags"})
             if node.real_children and not node_dict:
                 continue
 

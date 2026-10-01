@@ -246,16 +246,19 @@ class RealNode(BaseNode, CoreDescriptor):
 
         self.meta = meta
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, exclude: Optional[set] = None) -> Dict[str, Any]:
         """Convert the node to a dictionary representation."""
+        if exclude is None:
+            exclude = set()
+
         d: Dict[str, Any] = {}
-        if self.index is not None:
+        if self.index is not None and "index" not in exclude:
             d["index"] = self.index
 
-        if self.meta:
+        if self.meta and "meta" not in exclude:
             d["meta"] = self.meta
 
-        if self.aliases:
+        if self.aliases and "alias" not in exclude:
             if len(self.aliases) == 1:
                 d["alias"] = self.aliases[0].pattern
             else:
@@ -384,10 +387,14 @@ class TagNode(RealNode):
 
         return tag_node
 
-    def to_dict(self, exclude_real_children: bool = False) -> Dict[str, Any]:
+    def to_dict(self, exclude: Optional[set] = None) -> Dict[str, Any]:
         """Convert the TagNode to a dictionary representation."""
-        d = super().to_dict()
-        if not exclude_real_children and self.tags:
+        if exclude is None:
+            exclude = set()
+
+        d = super().to_dict(exclude=exclude)
+
+        if self.tags and "tags" not in exclude:
             d["tags"] = {c.name: c.to_dict() for c in self.tags}
 
         return d
@@ -610,20 +617,25 @@ class ClassNode(RealNode):
 
         return node
 
-    def to_dict(self, exclude_real_children: bool = False):
+    def to_dict(self, exclude: Optional[set] = None) -> Dict[str, Any]:
         """Convert the ClassNode to a dictionary representation."""
-        d = super().to_dict()
 
-        if not exclude_real_children and self.classes:
+        if exclude is None:
+            exclude = set()
+
+        d = super().to_dict(exclude=exclude)
+
+        if self.classes and "classes" not in exclude:
             d["classes"] = {c.name: c.to_dict() for c in self.classes}
 
-        if not exclude_real_children and self.tags:
+        if self.tags and "tags" not in exclude:
             d["tags"] = {t.name: t.to_dict() for t in self.tags}
 
-        if self.virtuals:
+        if self.virtuals and "virtuals" not in exclude:
             d["virtuals"] = {
                 v.name: v.description.format(anchor=self) for v in self.virtuals
             }
+
         return d
 
     @property
