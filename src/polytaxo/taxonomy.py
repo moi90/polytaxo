@@ -277,11 +277,21 @@ class Taxonomy:
                     )
                 for child in node.classes:
                     if child.name == name:
+                        if data:
+                            raise ValueError(
+                                f"Duplicate class node {name!r} in flat taxonomy path {path!r}. "
+                                "Define parent paths before descendants."
+                            )
                         return child
                 return node.add_class(ClassNode.from_dict(name, data, node))
 
             for child in node.tags:
                 if child.name == name:
+                    if data:
+                        raise ValueError(
+                            f"Duplicate tag node {name!r} in flat taxonomy path {path!r}. "
+                            "Define parent paths before descendants."
+                        )
                     return child
 
             return node.add_tag(TagNode.from_dict(name, data, node))

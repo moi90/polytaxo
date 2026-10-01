@@ -24,6 +24,20 @@ def test_poly_taxonomy_flat_roundtrip():
     assert roundtripped.to_dict() == taxonomy.to_dict()
 
 
+def test_from_flat_dict_raises_for_out_of_order_parent_data():
+    flat_dict = {
+        "/Copepoda/Calanus": {},
+        "/Copepoda": {
+            "alias": "copepods",
+            "index": 42,
+            "meta": {"rank": "subclass"},
+        },
+    }
+
+    with pytest.raises(ValueError, match="Define parent paths before descendants"):
+        Taxonomy.from_flat_dict(flat_dict)
+
+
 def test_poly_taxonomy():
     # A concrete example of a Taxonomy
     poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
