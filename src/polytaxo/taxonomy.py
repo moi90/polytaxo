@@ -252,19 +252,18 @@ class Expression:
 
         Args:
             scores: Mapping from concept to float score. Concepts can be given as the node itself
-                or as the name used in the expression (formatted relative to the anchor).
+                or by its fully qualified name (e.g. ":cut" or "/Copepoda/Calanus"), as returned by `str(node)`.
 
         Raises:
             KeyError: If a score is missing.
         """
-        anchor = self.include.anchor
         key = []
         for k in self.sort_by:
             node = k.node if isinstance(k, NegatedRealNode) else k
             if node in scores:
                 score = scores[node]
             else:
-                score = scores[node.format(anchor)]
+                score = scores[str(node)]
             key.append(float(score) if isinstance(k, NegatedRealNode) else -float(score))
         return tuple(key)
 

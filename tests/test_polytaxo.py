@@ -375,8 +375,8 @@ def test_expression_sort_by():
     assert len(expr.sort_by) == 2
     assert poly_taxonomy.parse_expression(str(expr)) == expr
 
-    items = {"a": {"Calanus": 0.1, "sex:male": 0.5}, "b": {"Calanus": 0.9, "sex:male": 0.2}}
-    items["c"] = {"Calanus": 0.9, "sex:male": 0.1}
+    items = {"a": {"/Copepoda/Calanus": 0.1, "/Copepoda:sex:male": 0.5}, "b": {"/Copepoda/Calanus": 0.9, "/Copepoda:sex:male": 0.2}}
+    items["c"] = {"/Copepoda/Calanus": 0.9, "/Copepoda:sex:male": 0.1}
     order = sorted(items, key=lambda k: expr.sort_key(items[k]))
     assert order == ["c", "b", "a"]
 
