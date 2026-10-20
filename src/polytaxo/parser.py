@@ -49,7 +49,7 @@ _tokenize_fsm = _compile_re(
             (r"\s+", None, NEUTRAL),
             (r"\w+", _append_field, IN_PATH),
             (r":|/", None, IN_PATH),
-            (r"[!\-()]", _append_token, NEUTRAL),
+            (r"[!\-()^]", _append_token, NEUTRAL),
             (r"'", None, IN_SINGLE_QUOTED_PATH),
             (r'"', None, IN_DOUBLE_QUOTED_PATH),
             (r"$", None, None),

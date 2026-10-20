@@ -17,6 +17,7 @@ from .core import (
     IndexProvider,
     Description,
     ClassNode,
+    NegatedRealNode,
     RealNode,
     TagNode,
     TOnConflictLiteral,
@@ -32,15 +33,20 @@ class Expression:
     Args:
         include (Description): A description to add / include in matches.
         exclude (List[Description]): A list of descriptions to remove / exclude from matches.
+        sort_by (Sequence[RealNode | NegatedRealNode]): Concepts whose scores determine the order
+            of matches. A node (`^name`) sorts by descending score,
+            a negated node (`^!name`) by ascending score.
     """
 
     def __init__(
         self,
         include: Description,
         exclude: Sequence[Union[Description, Descriptor]],
+        sort_by: Sequence[Union[RealNode, NegatedRealNode]] = (),
     ):
         self.include = include
         self.exclude = exclude
+        self.sort_by = tuple(sort_by)
 
     @fill_in_doc(_core_doc_fields)
     @staticmethod
@@ -70,6 +76,7 @@ class Expression:
 
         include = Description(anchor)
         exclude: List[Descriptor] = []
+        sort_by: List[Union[RealNode, NegatedRealNode]] = []
 
         tokens = iter(tokenize(expression_str))
 
@@ -77,6 +84,8 @@ class Expression:
         IN_INCLUDED_PARENTHESIS = 1
         EXCLUDE = 2
         IN_EXCLUDED_PARENTHESIS = 3
+        SORT = 4
+        sort_negate = False
 
         state = NEUTRAL
         description_tokens = []
@@ -100,7 +109,7 @@ class Expression:
                         )
                         description_tokens = []
                     break
-                elif token == "-":
+                elif token == "-" or token == "^":
                     # Flush currently saved description
                     if description_tokens:
                         include._parse_description_tokens(
@@ -109,7 +118,25 @@ class Expression:
                             on_conflict=on_conflict,
                         )
                         description_tokens = []
-                    state = EXCLUDE
+                    state = EXCLUDE if token == "-" else SORT
+                    sort_negate = False
+                    continue
+                else:
+                    raise ValueError(f"Unexpected token: {token} (state={state})")
+            elif state == SORT:
+                if token == "!":
+                    sort_negate = not sort_negate
+                    continue
+                elif isinstance(token, tuple):
+                    node = include.anchor.find_real_node(token, with_alias=with_alias)
+                    key = node.negate(sort_negate)
+                    if any(k.unique_id == key.unique_id for k in sort_by) or any(
+                        k.unique_id == node.negate(not sort_negate).unique_id
+                        for k in sort_by
+                    ):
+                        raise ValueError(f"Duplicate sort key: {key.format()}")
+                    sort_by.append(key)  # type: ignore
+                    state = NEUTRAL
                     continue
                 else:
                     raise ValueError(f"Unexpected token: {token} (state={state})")
@@ -164,7 +191,7 @@ class Expression:
             else:
                 raise ValueError(f"Unexpected state: {state}")
 
-        return Expression(include, exclude)
+        return Expression(include, exclude, sort_by)
 
     def match(self, description: Description) -> bool:
         """
@@ -215,18 +242,49 @@ class Expression:
 
         return description
 
+    def sort_key(self, scores: Mapping[Any, float]) -> Tuple[float, ...]:
+        """
+        Compute a sort key for an item from its concept scores.
+
+        Sorting items by this key in ascending order (e.g. `sorted(items, key=...)`)
+        orders them as requested by the `^` terms: `^name` by descending
+        and `^!name` by ascending score of `name`.
+
+        Args:
+            scores: Mapping from concept to float score. Concepts can be given as the node itself
+                or as the name used in the expression (formatted relative to the anchor).
+
+        Raises:
+            KeyError: If a score is missing.
+        """
+        anchor = self.include.anchor
+        key = []
+        for k in self.sort_by:
+            node = k.node if isinstance(k, NegatedRealNode) else k
+            if node in scores:
+                score = scores[node]
+            else:
+                score = scores[node.format(anchor)]
+            key.append(float(score) if isinstance(k, NegatedRealNode) else -float(score))
+        return tuple(key)
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Expression):
             return NotImplemented
 
-        return (self.include == other.include) and (self.exclude == other.exclude)
+        return (
+            (self.include == other.include)
+            and (self.exclude == other.exclude)
+            and (self.sort_by == other.sort_by)
+        )
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}(include={self.include!r}, exclude={self.exclude!r})>"
+        return f"<{self.__class__.__name__}(include={self.include!r}, exclude={self.exclude!r}, sort_by={self.sort_by!r})>"
 
     def __str__(self) -> str:
+        sort = [f"^{k.format(self.include.anchor)}" for k in self.sort_by]
         if not self.exclude:
-            return str(self.include)
+            return " ".join([str(self.include), *sort]).strip()
 
         exclude = []
         for excl in self.exclude:
@@ -237,7 +295,7 @@ class Expression:
             else:
                 raise ValueError(f"Unexpected exclusion clause {excl!r}")
 
-        return str(self.include) + " " + " ".join(exclude)
+        return " ".join([str(self.include), *exclude, *sort])
 
 
 class Taxonomy:

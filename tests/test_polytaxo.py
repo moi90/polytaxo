@@ -367,3 +367,18 @@ def test_description_conflicts():
     )
     assert result == Copepoda_not_frontal
     assert hash(result) == hash(Copepoda_not_frontal)
+
+
+def test_expression_sort_by():
+    poly_taxonomy = Taxonomy.from_dict(taxonomy_dict)
+    expr = poly_taxonomy.parse_expression("Copepoda -view:lateral ^Calanus ^!sex:male")
+    assert len(expr.sort_by) == 2
+    assert poly_taxonomy.parse_expression(str(expr)) == expr
+
+    items = {"a": {"Calanus": 0.1, "sex:male": 0.5}, "b": {"Calanus": 0.9, "sex:male": 0.2}}
+    items["c"] = {"Calanus": 0.9, "sex:male": 0.1}
+    order = sorted(items, key=lambda k: expr.sort_key(items[k]))
+    assert order == ["c", "b", "a"]
+
+    with pytest.raises(ValueError):
+        poly_taxonomy.parse_expression("^Calanus ^!Calanus")
