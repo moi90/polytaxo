@@ -5,10 +5,70 @@ from hypothesis.strategies import (
     integers,
     lists,
     sampled_from,
+    from_regex,
 )
-from polytaxo.core import ClassNode, Description
-from polytaxo.taxonomy import Expression
+from polytaxo.core import ClassNode, Description, TagNode
+from polytaxo.taxonomy import Expression, Taxonomy
 from tests.helpers import format_description, format_expression
+
+
+@composite
+def any_taxonomy(draw: DrawFn) -> Taxonomy:
+    """
+    Construct a random taxonomy with a few levels of children, each with some tags.
+    """
+
+    # Create a root node
+    root = ClassNode("", None, None)
+
+    def add_tag_children(node: ClassNode | TagNode, depth):
+        if depth <= 0:
+            return
+
+        # Draw a set of unique tag names for this node
+        names = draw(
+            lists(
+                from_regex(r"[a-zA-Z_][-_ a-zA-Z0-9]*", fullmatch=True),
+                min_size=0,
+                max_size=3,
+                unique=True,
+            )
+        )
+        for name in names:
+            child = node.add_tag(TagNode(name, node, None))
+            add_tag_children(child, depth - 1)
+
+    def add_class_children(node: ClassNode, depth):
+        if depth <= 0:
+            return
+
+        # Draw a set of unique class names for this node
+        names = draw(
+            lists(
+                from_regex(r"[a-zA-Z_][-_ a-zA-Z0-9]*", fullmatch=True)
+                # Filter out any names that are direct children of any precurser of the current node.
+                .filter(
+                    lambda name: (
+                        not any(
+                            name == c.name
+                            for n in node.precursors
+                            for c in n.classes + n.tags
+                        )
+                    )
+                ),
+                min_size=0,
+                max_size=3,
+                unique=True,
+            )
+        )
+        for name in names:
+            child = node.add_class(ClassNode(name, node, None))
+            add_tag_children(child, depth - 1)
+            add_class_children(child, depth - 1)
+
+    add_class_children(root, 3)
+
+    return Taxonomy(root)
 
 
 @composite
@@ -24,8 +84,12 @@ def description(draw: DrawFn, root):
         for t in node.tags:
             tags.extend(t.walk())
         node = node.parent
-    tags.extend([t.negate() for t in tags])
-    qualifiers = draw(lists(sampled_from(tags)))
+
+    if tags:
+        tags.extend([t.negate() for t in tags])
+        qualifiers = draw(lists(sampled_from(tags)))
+    else:
+        qualifiers = []
 
     description = Description(anchor)
     description.update(qualifiers, "replace")
