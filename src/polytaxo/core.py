@@ -1037,6 +1037,9 @@ class Description:
         Args:
             {anchor_arg}
         """
+
+        # NB: The following implementation should be kept in sync with the docs.
+
         tokens = iter(tokenize(description_str))
         d = Description(anchor)
         d._parse_description_tokens(
