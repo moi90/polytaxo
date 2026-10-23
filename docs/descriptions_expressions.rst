@@ -34,9 +34,6 @@ The distinction between affirmed, negated, and unspecified descriptors is centra
 - ``!a`` means the concept ``a`` is explicitly absent / false.
 - If neither ``a`` nor ``!a`` is present, the concept is unspecified.
 - Negation applies to the next descriptor only.
-
-Depending on the taxonomy structure, negation can imply additional constraints. For example, if ``sex:male`` and ``sex:female`` are the only valid alternatives, ``!sex:male`` implies ``sex:female`` and vice versa.
-
     
 .. admonition:: More Examples
 
@@ -62,6 +59,7 @@ For classes, disambiguation is necessary in the case of taxonomic homonymy, wher
 For tags, disambiguation allows for the same tag name to be used in different contexts, e.g., a descendant might redefine a tag with the same name as one of its ancestors.
 
 - ``/`` separates class segments.
+- A leading ``/`` denotes an absolute path from the taxonomy root.
 - ``:`` separates tag segments.
 
 .. admonition:: Examples
@@ -155,12 +153,12 @@ Formal Grammar
    simple_name: ( letter | digit | "_" )+
    complex_name: ( letter | digit | "_" | "-" | ws | ... )+
    segment: simple_name | ( "'" complex_name "'" ) | ( '"' complex_name '"' )
-   disambiguated_class_name: segment ( "/" segment)*
+    disambiguated_class_name: "/"? segment ( "/" segment)*
    disambiguated_tag_name: ( disambiguated_class_name | segment) ( ":" segment)*
    disambiguated_name: disambiguated_class_name | disambiguated_tag_name
    negation: "!"
    descriptor: negation* disambiguated_name
-   description: disambiguated_class_name (ws descriptor)*
-   expression: description (ws exclude_clause)*
+   description: disambiguated_class_name ( ws descriptor )*
+   expression: disambiguated_class_name ( (ws descriptor ) | ( ws exclude_clause ) )*
    exclude_clause: "-" (descriptor | excluded_description)
-   excluded_description: "(" description ")"
+   excluded_description: "(" (disambiguated_class_name | descriptor) ( ws descriptor )* ")"
