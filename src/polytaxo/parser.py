@@ -43,35 +43,33 @@ def _finalize_part_and_append_token(s: str, tokens: List, parts: List, field: Li
     tokens.append(s)
 
 
-_tokenize_fsm = _compile_re(
-    {
-        NEUTRAL: [
-            (r"\s+", None, NEUTRAL),
-            (r"\w+", _append_field, IN_PATH),
-            (r":|/", None, IN_PATH),
-            (r"[!\-()]", _append_token, NEUTRAL),
-            (r"'", None, IN_SINGLE_QUOTED_PATH),
-            (r'"', None, IN_DOUBLE_QUOTED_PATH),
-            (r"$", None, None),
-        ],
-        IN_PATH: [
-            (r":|/", _finalize_field, IN_PATH),
-            (r"\w[\w-]+", _append_field, IN_PATH),
-            (r"(\s)|($)", _finalize_part, NEUTRAL),
-            (r"[)]", _finalize_part_and_append_token, NEUTRAL),
-        ],
-        IN_SINGLE_QUOTED_PATH: [
-            (r":|/", _finalize_field, IN_SINGLE_QUOTED_PATH),
-            (r'[\w\s"!]+', _append_field, IN_SINGLE_QUOTED_PATH),
-            (r"'", _finalize_part, NEUTRAL),
-        ],
-        IN_DOUBLE_QUOTED_PATH: [
-            (r":|/", _finalize_field, IN_DOUBLE_QUOTED_PATH),
-            (r"[\w\s']+", _append_field, IN_DOUBLE_QUOTED_PATH),
-            (r'"', _finalize_part, NEUTRAL),
-        ],
-    }
-)
+_tokenize_fsm = _compile_re({
+    NEUTRAL: [
+        (r"\s+", None, NEUTRAL),
+        (r"\w[\w-]*", _append_field, IN_PATH),
+        (r":|/", None, IN_PATH),
+        (r"[!\-()]", _append_token, NEUTRAL),
+        (r"'", None, IN_SINGLE_QUOTED_PATH),
+        (r'"', None, IN_DOUBLE_QUOTED_PATH),
+        (r"$", None, None),
+    ],
+    IN_PATH: [
+        (r":|/", _finalize_field, IN_PATH),
+        (r"\w[\w-]*", _append_field, IN_PATH),
+        (r"(\s)|($)", _finalize_part, NEUTRAL),
+        (r"[)]", _finalize_part_and_append_token, NEUTRAL),
+    ],
+    IN_SINGLE_QUOTED_PATH: [
+        (r":|/", _finalize_field, IN_SINGLE_QUOTED_PATH),
+        (r'[\w\s"!\-]+', _append_field, IN_SINGLE_QUOTED_PATH),
+        (r"'", _finalize_part, NEUTRAL),
+    ],
+    IN_DOUBLE_QUOTED_PATH: [
+        (r":|/", _finalize_field, IN_DOUBLE_QUOTED_PATH),
+        (r"[\w\s'\-]+", _append_field, IN_DOUBLE_QUOTED_PATH),
+        (r'"', _finalize_part, NEUTRAL),
+    ],
+})
 
 
 def tokenize(s: str):
@@ -96,7 +94,7 @@ def tokenize(s: str):
 
         if match is None:
             raise ValueError(
-                f"Unexpected character {s[pos:pos+1]!r} at pos {pos} (state={state})\n{s}\n{('-'*pos)+'^'}"
+                f"Unexpected character {s[pos : pos + 1]!r} at pos {pos} (state={state})\n{s}\n{('-' * pos) + '^'}"
             )
 
         if action is not None:
@@ -122,11 +120,11 @@ def quote(s: str, quote_chars="'\""):
         return s
 
     try:
-        quote = next(c for c in quote_chars if c not in s)
+        quote_char = next(c for c in quote_chars if c not in s)
     except StopIteration:
-        raise ValueError(f"{s} contains all quote chars ({quote_chars!r})")
+        raise ValueError(f"{s} contains all quote chars ({quote_chars!r})") from None
 
-    return quote + s + quote
+    return quote_char + s + quote_char
 
 
 def join(seq_of_str: Iterable[str]):

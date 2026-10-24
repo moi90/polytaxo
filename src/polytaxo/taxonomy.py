@@ -68,6 +68,8 @@ class Expression:
             ValueError: If an unexpected token or state is encountered in the expression string.
         """
 
+        # NB: The following implementation should be kept in sync with the docs.
+
         include = Description(anchor)
         exclude: List[Descriptor] = []
 
