@@ -102,7 +102,7 @@ class BaseNode:
         self.aliases = tuple(Alias(a) for a in aliases)
 
     @functools.cached_property
-    def precursors(self) -> Tuple["BaseNode", ...]:
+    def lineage(self) -> Tuple["BaseNode", ...]:
         """Return a tuple of all precursor nodes up to the root."""
 
         def _(node):
@@ -128,29 +128,29 @@ class BaseNode:
     @functools.cached_property
     def path(self):
         """Return the path from the root to this node as a tuple of names."""
-        return tuple(n.name for n in self.precursors)
+        return tuple(n.name for n in self.lineage)
 
     def format(self, anchor: Union["ClassNode", None] = None, quoted=False) -> str:
         """Format the node as a string relative to an optional anchor."""
-        precursors = self.precursors
+        lineage = self.lineage
 
         if anchor is not None:
             # TagNodes are displayed relative to the next precursor of anchor
             if isinstance(self, TagNode):
                 # Find first ClassNode in precursors
                 tag_anchor = self.parent_class
-                if tag_anchor in anchor.precursors:
+                if tag_anchor in anchor.lineage:
                     anchor = tag_anchor
 
             if anchor == self:
                 return self.name
 
-            i = precursors.index(anchor)
-            precursors = precursors[i + 1 :]
+            i = lineage.index(anchor)
+            lineage = lineage[i + 1 :]
 
         def build():
             sep = ""
-            for n in precursors:
+            for n in lineage:
                 if sep and isinstance(n, TagNode):
                     sep = ":"
                 yield sep + n.name
@@ -305,7 +305,7 @@ class NegatedRealNode(CoreDescriptor, Generic[TRealNode]):
     def __init__(self, node: TRealNode) -> None:
         # We cannot negate the root
         if node.parent is None:
-            raise ValueError(f"Root node cannot be negated")
+            raise ValueError("Root node cannot be negated")
 
         self.node = node
 
@@ -333,7 +333,7 @@ class NegatedRealNode(CoreDescriptor, Generic[TRealNode]):
 
             if isinstance(other, ClassNode):
                 # !A <= B if A is a sibling of any precursor of B
-                for n in other.precursors[::-1]:
+                for n in other.lineage[::-1]:
                     if any(s <= self.node for s in n.siblings):
                         return True
 
@@ -345,7 +345,7 @@ class NegatedRealNode(CoreDescriptor, Generic[TRealNode]):
 
             if isinstance(other, TagNode):
                 # !A <= B iff A implies a sibling of any precursor of B
-                for n in other.precursors[::-1]:
+                for n in other.lineage[::-1]:
                     if not isinstance(n, TagNode):
                         break
 
@@ -520,7 +520,7 @@ class TagNode(RealNode):
 
     def __le__(self, other) -> bool:
         if isinstance(other, TagNode):
-            return self in other.precursors
+            return self in other.lineage
 
         if isinstance(other, ClassNode):
             return False
@@ -927,10 +927,10 @@ class ClassNode(RealNode):
 
     def union(self, other: "ClassNode"):
         """Return the union of the current node with another node."""
-        if self in other.precursors:
+        if self in other.lineage:
             return other
 
-        if other in self.precursors:
+        if other in self.lineage:
             return self
 
         raise ValueError(f"{self} and {other} are incompatible")
@@ -956,7 +956,7 @@ class ClassNode(RealNode):
 
     def __le__(self, other) -> bool:
         if isinstance(other, (TagNode, ClassNode)):
-            return self in other.precursors
+            return self in other.lineage
 
         if isinstance(other, NegatedRealNode):
             return False

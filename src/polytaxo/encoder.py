@@ -112,7 +112,7 @@ class DescriptionEncoder:
 
         def handle_positive(node: RealNode):
             # Activate node and all precursors
-            for precursor in node.precursors:
+            for precursor in node.lineage:
                 if not isinstance(precursor, node.__class__):
                     continue
 
@@ -261,7 +261,7 @@ class DescriptionEncoder:
 
         # Once the anchor is predicted, predict additional tags
         class_node: ClassNode
-        for class_node in description.anchor.precursors:  # type: ignore
+        for class_node in description.anchor.lineage:  # type: ignore
             # Tags below a ClassNode are not in rivalry
             for tag in class_node.tags:
                 if tag in node_indexes:
