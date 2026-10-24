@@ -103,7 +103,7 @@ class BaseNode:
 
     @functools.cached_property
     def lineage(self) -> Tuple["BaseNode", ...]:
-        """Return a tuple of all precursor nodes up to the root."""
+        """Return the lineage as a tuple from the root to this node."""
 
         def _(node):
             while node is not None:
@@ -135,9 +135,9 @@ class BaseNode:
         lineage = self.lineage
 
         if anchor is not None:
-            # TagNodes are displayed relative to the next precursor of anchor
+            # TagNodes are displayed relative to nearest ClassNode in the lineage
             if isinstance(self, TagNode):
-                # Find first ClassNode in precursors
+                # Find first ClassNode in lineage
                 tag_anchor = self.parent_class
                 if tag_anchor in anchor.lineage:
                     anchor = tag_anchor
@@ -332,7 +332,7 @@ class NegatedRealNode(CoreDescriptor, Generic[TRealNode]):
                 return False
 
             if isinstance(other, ClassNode):
-                # !A <= B if A is a sibling of any precursor of B
+                # !A <= B if A is a sibling of B or any of B's ancestors
                 for n in other.lineage[::-1]:
                     if any(s <= self.node for s in n.siblings):
                         return True
@@ -344,7 +344,7 @@ class NegatedRealNode(CoreDescriptor, Generic[TRealNode]):
                 return False
 
             if isinstance(other, TagNode):
-                # !A <= B iff A implies a sibling of any precursor of B
+                # !A <= B iff A implies a sibling of B or any of B's ancestors
                 for n in other.lineage[::-1]:
                     if not isinstance(n, TagNode):
                         break
