@@ -154,10 +154,10 @@ Formal Grammar
 .. productionlist::
     ws: (space | tab | newline)+
     unquoted_class_name: "/"? name ( "/" name)*
-    quoted_class_name : ( "'" class_name "'" ) | ( '"' class_name '"' )
+    quoted_class_name : ( "'" unquoted_class_name "'" ) | ( '"' unquoted_class_name '"' )
     class_name: unquoted_class_name | quoted_class_name
-    unquoted_tag_name: ( unquoted_class_name | name) ( ":" name)*
-    quoted_tag_name : ( "'" tag_name "'" ) | ( '"' tag_name '"' )
+    unquoted_tag_name: name ( ":" name)*
+    quoted_tag_name : ( "'" unquoted_tag_name "'" ) | ( '"' unquoted_tag_name '"' )
     tag_name: unquoted_tag_name | quoted_tag_name
     class_or_tag_name: class_name | tag_name
     negation: "!"
