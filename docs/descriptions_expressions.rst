@@ -32,7 +32,7 @@ The distinction between affirmed, negated, and unspecified descriptors is centra
 
 - ``a`` means the concept ``a`` is explicitly present / true.
 - ``!a`` means the concept ``a`` is explicitly absent / false.
-- If neither ``a`` nor ``!a`` is present, the concept is unspecified.
+- A concept is unspecified if neither ``a`` nor ``!a`` is implied by the description. (Implication is determined by the structure of the taxonomy: A parent concept is implied by its children and a positive concept negates its mutually exclusive siblings.)
 - Negation applies to the next descriptor only.
     
 .. admonition:: More Examples
