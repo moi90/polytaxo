@@ -7,7 +7,7 @@ from hypothesis.strategies import (
     sampled_from,
     from_regex,
 )
-from polytaxo.core import ClassNode, Description, TagNode
+from polytaxo.core import ClassNode, Description, NodeNotFoundError, TagNode
 from polytaxo.taxonomy import Expression, Taxonomy
 from tests.helpers import format_description, format_expression
 
@@ -38,6 +38,13 @@ def any_taxonomy(draw: DrawFn) -> Taxonomy:
             child = node.add_tag(TagNode(name, node, None))
             add_tag_children(child, depth - 1)
 
+    def tag_not_found(node: ClassNode, name: str):
+        try:
+            node.find_tag(name)
+        except NodeNotFoundError:
+            return True
+        return False
+
     def add_class_children(node: ClassNode, depth):
         if depth <= 0:
             return
@@ -46,16 +53,8 @@ def any_taxonomy(draw: DrawFn) -> Taxonomy:
         names = draw(
             lists(
                 from_regex(r"[a-zA-Z_][-_ a-zA-Z0-9]*", fullmatch=True)
-                # Filter out any names that are direct children of any precurser of the current node.
-                .filter(
-                    lambda name: (
-                        not any(
-                            name == c.name
-                            for n in node.precursors
-                            for c in n.classes + n.tags
-                        )
-                    )
-                ),
+                # Filter out any names that are already available as tags for this node
+                .filter(lambda name: tag_not_found(node, name)),
                 min_size=0,
                 max_size=3,
                 unique_by=str.casefold,
