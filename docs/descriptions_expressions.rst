@@ -93,6 +93,7 @@ Quoted Names
 ~~~~~~~~~~~~
 
 Quoted names allow for the use of names that contain special characters or whitespace.
+Quoting applies to a full disambiguated name.
 
 .. admonition:: Example
 
@@ -104,6 +105,8 @@ Quoted names allow for the use of names that contain special characters or white
 
         *   - ``'Turbinaria ornata'``
             - Quoted name containing whitespace.
+        *   - ``'Copepoda/Calanus hyperboreus'``
+            - Quoted disambiguated class name where one segment contains whitespace.
 
 Expressions
 -----------
@@ -149,16 +152,17 @@ Formal Grammar
     NB: The following grammar should be kept in sync with the description above and the implementation in :meth:`polytaxo.Taxonomy.parse_description` and :meth:`polytaxo.Taxonomy.parse_expression`.
 
 .. productionlist::
-   ws: (space | tab | newline)+
-   simple_name: ( letter | digit | "_" )+
-   complex_name: ( letter | digit | "_" | "-" | ws | ... )+
-   segment: simple_name | ( "'" complex_name "'" ) | ( '"' complex_name '"' )
-    disambiguated_class_name: "/"? segment ( "/" segment)*
-   disambiguated_tag_name: ( disambiguated_class_name | segment) ( ":" segment)*
-   disambiguated_name: disambiguated_class_name | disambiguated_tag_name
-   negation: "!"
-   descriptor: negation* disambiguated_name
-   description: disambiguated_class_name ( ws descriptor )*
-   expression: disambiguated_class_name ( (ws descriptor ) | ( ws exclude_clause ) )*
-   exclude_clause: "-" (descriptor | excluded_description)
-   excluded_description: "(" (disambiguated_class_name | descriptor) ( ws descriptor )* ")"
+    ws: (space | tab | newline)+
+    unquoted_class_name: "/"? name ( "/" name)*
+    quoted_class_name : ( "'" class_name "'" ) | ( '"' class_name '"' )
+    class_name: unquoted_class_name | quoted_class_name
+    unquoted_tag_name: ( unquoted_class_name | name) ( ":" name)*
+    quoted_tag_name : ( "'" tag_name "'" ) | ( '"' tag_name '"' )
+    tag_name: unquoted_tag_name | quoted_tag_name
+    class_or_tag_name: class_name | tag_name
+    negation: "!"
+    descriptor: negation* class_or_tag_name
+    description: class_name ( ws descriptor )*
+    excluded_description: "(" descriptor ( ws descriptor )* ")"
+    exclude_clause: "-" (descriptor | excluded_description)
+    expression: class_name ( ws (descriptor | exclude_clause ) )*
