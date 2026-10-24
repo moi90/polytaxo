@@ -111,16 +111,16 @@ class DescriptionEncoder:
                     handle_negative(child, max_depth=max_depth)
 
         def handle_positive(node: RealNode):
-            # Activate node and all precursors
-            for precursor in node.precursors:
-                if not isinstance(precursor, node.__class__):
+            # Activate node and all ancestors, and deactivate all siblings of node and ancestors
+            for n in node.lineage:
+                if not isinstance(n, node.__class__):
                     continue
 
-                if precursor in nodes_to_encode:
-                    map[precursor] = 1.0
+                if n in nodes_to_encode:
+                    map[n] = 1.0
 
                 # Deactivate all siblings
-                for sibling in precursor.siblings:
+                for sibling in n.siblings:
                     handle_negative(sibling, max_depth=negative_propagation_depth)
 
         handle_positive(description.anchor)
@@ -261,7 +261,7 @@ class DescriptionEncoder:
 
         # Once the anchor is predicted, predict additional tags
         class_node: ClassNode
-        for class_node in description.anchor.precursors:  # type: ignore
+        for class_node in description.anchor.lineage:  # type: ignore
             # Tags below a ClassNode are not in rivalry
             for tag in class_node.tags:
                 if tag in node_indexes:
