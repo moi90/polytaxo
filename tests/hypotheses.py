@@ -31,7 +31,7 @@ def any_taxonomy(draw: DrawFn) -> Taxonomy:
                 from_regex(r"[a-zA-Z_][-_ a-zA-Z0-9]*", fullmatch=True),
                 min_size=0,
                 max_size=3,
-                unique=True,
+                unique_by=str.casefold,
             )
         )
         for name in names:
@@ -58,7 +58,7 @@ def any_taxonomy(draw: DrawFn) -> Taxonomy:
                 ),
                 min_size=0,
                 max_size=3,
-                unique=True,
+                unique_by=str.casefold,
             )
         )
         for name in names:
