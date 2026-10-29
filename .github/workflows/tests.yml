@@ -21,7 +21,6 @@ jobs:
           filters: |
             lib:
               - 'lib/**'
-              - 'tests/**'
               - 'pyproject.toml'
               - 'uv.lock'
               - '.github/workflows/tests.yml'
@@ -42,7 +41,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --group dev
-      - run: uv run --frozen --group dev pytest tests
+      - run: uv run --frozen --group dev pytest lib/tests
 
   gui-tests:
     needs: changes
