@@ -1695,6 +1695,12 @@ requires-dist = [{ name = "numpy" }]
 [[package]]
 name = "polytaxo-gui"
 source = { editable = "gui" }
+dependencies = [
+    { name = "polytaxo" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "polytaxo", editable = "lib" }]
 
 [[package]]
 name = "pygments"
