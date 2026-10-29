@@ -1,5 +1,3 @@
-# PolyTaxo
-
 # `polytaxo` package
 
 ## Usage Examples
@@ -19,9 +17,11 @@ taxonomy_dict = {
             "stage": {"CI": {}, "CII": {}, "CIII": {}, "CIV": {}, "CV": {}},
         },
         "children": {
-            "Calanus": {"children": {"Calanus finmarchicus": {}, "Calanus glacialis": {}}},
+            "Calanus": {
+                "children": {"Calanus finmarchicus": {}, "Calanus glacialis": {}}
+            },
             "Metridia": {"children": {"Metridia longa": {}}},
-        }
+        },
     }
 }
 
