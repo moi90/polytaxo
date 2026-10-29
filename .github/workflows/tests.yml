@@ -54,4 +54,4 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --group dev
-      - run: uv run --frozen --group dev pytest gui/tests
+      - run: uv run --frozen --group dev pytest -o addopts= gui/tests
