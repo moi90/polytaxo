@@ -9,3 +9,5 @@ coverage.xml
 experiments/
 .hypothesis/
 docs/_build
+lib/src/polytaxo/_version.py
+gui/src/polytaxo_gui/_version.py
