@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.8"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -9,6 +9,22 @@ resolution-markers = [
     "python_full_version == '3.9.*'",
     "python_full_version < '3.9'",
 ]
+
+[manifest]
+members = [
+    "polytaxo",
+    "polytaxo-gui",
+]
+
+[manifest.dependency-groups]
+dev = [
+    { name = "hypothesis" },
+    { name = "polytaxo", editable = "lib" },
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+docs = [{ name = "sphinx", specifier = ">=1.4" }]
 
 [[package]]
 name = "alabaster"
@@ -1664,7 +1680,7 @@ wheels = [
 
 [[package]]
 name = "polytaxo"
-source = { editable = "." }
+source = { editable = "lib" }
 dependencies = [
     { name = "numpy", version = "1.24.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
@@ -1673,39 +1689,18 @@ dependencies = [
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "hypothesis", version = "6.113.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
-    { name = "hypothesis", version = "6.141.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
-    { name = "hypothesis", version = "6.168.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
-    { name = "hypothesis", version = "6.170.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pyright" },
-    { name = "pytest", version = "8.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
-    { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "pytest-cov", version = "5.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
-    { name = "pytest-cov", version = "7.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
-]
-docs = [
-    { name = "sphinx", version = "7.1.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
-    { name = "sphinx", version = "7.4.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
-    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
-    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.12.*'" },
-    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
-]
-
 [package.metadata]
 requires-dist = [{ name = "numpy" }]
 
-[package.metadata.requires-dev]
-dev = [
-    { name = "hypothesis" },
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
+[[package]]
+name = "polytaxo-gui"
+source = { editable = "gui" }
+dependencies = [
+    { name = "polytaxo" },
 ]
-docs = [{ name = "sphinx", specifier = ">=1.4" }]
+
+[package.metadata]
+requires-dist = [{ name = "polytaxo", editable = "lib" }]
 
 [[package]]
 name = "pygments"
