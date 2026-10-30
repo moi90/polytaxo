@@ -42,7 +42,17 @@ Contributions are welcome! Please submit issues or pull requests on the
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for
-details.
+This repository contains two independently licensed Python packages:
+
+- Data access library: GNU Lesser General Public License, version 3 or later
+  (LGPL-3.0-or-later).
+- GUI application: GNU General Public License, version 3 or later
+  (GPL-3.0-or-later).
+
+See the `LICENSE` file in each package directory for its applicable license
+terms.
+
+Both packages are free software. You are free to use, study, modify, and
+redistribute them under their respective licenses.
 
 For more information, see the [original blog post](https://www.nerdluecht.de/index.php/2023/10/23/polytaxo-using-a-polyhierarchical-taxonomy-to-describe-zooplankton-objects/).
