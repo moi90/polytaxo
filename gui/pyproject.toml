@@ -3,6 +3,10 @@ name = "polytaxo-gui"
 dynamic = ["version"]
 description = "Graphical user interface for PolyTaxo."
 requires-python = ">=3.8"
+license = "GPL-3.0-or-later"
+classifiers = [
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+]
 dependencies = [
     "polytaxo>=0.3,<0.4",
 ]
