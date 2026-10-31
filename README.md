@@ -44,9 +44,9 @@ Contributions are welcome! Please submit issues or pull requests on the
 
 This repository contains two independently licensed Python packages:
 
-- Data access library: GNU Lesser General Public License, version 3 or later
+- The PolyTaxo library (`polytaxo`): GNU Lesser General Public License, version 3 or later
   (LGPL-3.0-or-later).
-- GUI application: GNU General Public License, version 3 or later
+- The PolyTaxo GUI application (`polytaxo_gui`): GNU General Public License, version 3 or later
   (GPL-3.0-or-later).
 
 See the `LICENSE` file in each package directory for its applicable license
