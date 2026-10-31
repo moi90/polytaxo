@@ -5,6 +5,7 @@ members = ["lib", "gui"]
 dev = [
     "hypothesis",
     "polytaxo",
+    "polytaxo_gui",
     "pytest",
     "pytest-cov",
     "pyright",
@@ -15,6 +16,7 @@ docs = [
 
 [tool.uv.sources]
 polytaxo = { workspace = true }
+polytaxo_gui = { workspace = true }
 
 [tool.pytest.ini_options]
 addopts = "--cov=polytaxo --cov-report xml"

@@ -20,6 +20,7 @@ members = [
 dev = [
     { name = "hypothesis" },
     { name = "polytaxo", editable = "lib" },
+    { name = "polytaxo-gui", editable = "gui" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
