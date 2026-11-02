@@ -20,14 +20,16 @@ class Alias:
         self.pattern = pattern
         normalized_pattern = pattern.casefold()
 
-        # If the pattern starts with a slash, it is considered...
+        # If the pattern starts with a slash, it is considered "anchored",
+        # i.e. it only matches if the parent node also matched.
+        # This is to restrict wildcards to the current subtree.
         if normalized_pattern.startswith("/"):
             self._is_anchored = True
             normalized_pattern = normalized_pattern[1:]
         else:
             self._is_anchored = False
 
-        self._match = re.compile(fnmatch.translate(normalized_pattern)).match
+        self._match = re.compile(fnmatch.translate(normalized_pattern)).fullmatch
         self.specificy = calc_specificy(normalized_pattern)
 
     def match(self, name: str, has_active_parent=False) -> int:
