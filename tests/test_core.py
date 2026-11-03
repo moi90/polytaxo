@@ -7,6 +7,28 @@ def test_find_class():
     Copepoda.find_class("Calanoida")
 
 
+def test_walk_include_self_toggle():
+    """walk() should include `self` by default and skip it when include_self=False."""
+    root = ClassNode.from_dict(
+        "Root",
+        {
+            "classes": {"ClassA": {}},
+            "tags": {"TagA": {"tags": {"TagB": {}}}},
+        },
+    )
+
+    with_self = [node.path for node in root.walk()]
+    without_self = [node.path for node in root.walk(include_self=False)]
+
+    assert with_self == [
+        ("Root",),
+        ("Root", "ClassA"),
+        ("Root", "TagA"),
+        ("Root", "TagA", "TagB"),
+    ]
+    assert without_self == with_self[1:]
+
+
 def test_find_all_class_respects_anchored_alias_active_path():
     root = ClassNode.from_dict(
         "Root",

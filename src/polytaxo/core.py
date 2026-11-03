@@ -282,9 +282,15 @@ class RealNode(BaseNode, CoreDescriptor):
     def real_children(self) -> List["RealNode"]:
         raise NotImplementedError()
 
-    def walk(self) -> Iterator["RealNode"]:
-        """Walk through the node and its children."""
-        yield self
+    def walk(self, include_self: bool = True) -> Iterator["RealNode"]:
+        """Yield all real nodes in the subtree rooted at this node.
+
+        Args:
+            include_self (bool): Whether to include this node in the iteration.
+        """
+        if include_self:
+            yield self
+
         for child in self.real_children:
             yield from child.walk()
 
