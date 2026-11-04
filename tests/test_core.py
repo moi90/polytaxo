@@ -139,7 +139,7 @@ def test_add_tag_rejects_case_insensitive_duplicate_sibling_name():
 def test_add_class_does_not_shadow_existing_class():
     """Test that adding a class with the same name as an existing class in an ancestor raises an error.
 
-    This is allowed (because ):
+    This is allowed (because both Xs can be unambiguously referred to):
     ...
     └── A
         └── X
@@ -156,14 +156,51 @@ def test_add_class_does_not_shadow_existing_class():
     A = root.add_class(ClassNode("A", root, None))
     B = A.add_class(ClassNode("B", A, None))
 
-    # A/X, then A/B/X
-    A.add_class(ClassNode("X", A, None))
+    X = A.add_class(ClassNode("X", A, None))
 
+    # A/X, then A/B/X
     with pytest.raises(ValueError):
         B.add_class(ClassNode("X", B, None))
+
+    # Try to add X a second time to A
+    with pytest.raises(ValueError):
+        X.add_class(ClassNode("X", X, None))
 
     # A/B/X, then A/X
     B.add_class(ClassNode("Y", B, None))
 
     with pytest.raises(ValueError):
         A.add_class(ClassNode("Y", A, None))
+
+
+def test_from_dict_does_not_shadow_existing_class():
+    """Nested deserialization should not bypass ancestor-name shadowing checks."""
+
+    with pytest.raises(ValueError, match="same name already exists in ancestor"):
+        ClassNode.from_dict(
+            "",
+            {
+                "classes": {
+                    "X": {},
+                    "B": {
+                        "classes": {
+                            "X": {},
+                        }
+                    },
+                }
+            },
+        )
+
+    with pytest.raises(ValueError, match="same name already exists in ancestor"):
+        ClassNode.from_dict(
+            "",
+            {
+                "classes": {
+                    "X": {
+                        "classes": {
+                            "X": {},
+                        }
+                    },
+                }
+            },
+        )

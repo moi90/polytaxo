@@ -682,7 +682,7 @@ class ClassNode(RealNode):
         for node in self.lineage:
             assert isinstance(node, ClassNode)
 
-            for class_ in node.classes:
+            for class_ in itertools.chain((node,), node.classes):
                 if class_._matches_name(
                     name, has_active_parent=False, with_alias=False
                 ):
