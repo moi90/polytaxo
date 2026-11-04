@@ -43,8 +43,11 @@ def any_taxonomy(draw: DrawFn) -> Taxonomy:
                 unique_by=str.casefold,
             )
         )
-        for name in names:
-            child = node.add_tag(TagNode(name, node, None))
+        # First, create all children at this level...
+        children = [node.add_tag(TagNode(name, node, None)) for name in names]
+
+        # ...then recursively add children to each of them
+        for child in children:
             add_tag_children(child, depth - 1)
 
     def add_class_children(node: ClassNode, depth):
