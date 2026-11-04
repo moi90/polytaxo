@@ -7,7 +7,7 @@ from hypothesis.strategies import (
     sampled_from,
     from_regex,
 )
-from polytaxo.core import ClassNode, Description, NodeNotFoundError, TagNode
+from polytaxo.core import ClassNode, Description, TagNode
 from polytaxo.taxonomy import Expression, Taxonomy
 from tests.helpers import format_description, format_expression
 
@@ -21,6 +21,13 @@ def any_taxonomy(draw: DrawFn) -> Taxonomy:
     # Create a root node
     root = ClassNode("", None, None)
 
+    def name_is_available(node: ClassNode | TagNode, child_name: str):
+        try:
+            node._validate_child_name(child_name)
+            return True
+        except ValueError:
+            return False
+
     def add_tag_children(node: ClassNode | TagNode, depth):
         if depth <= 0:
             return
@@ -28,22 +35,20 @@ def any_taxonomy(draw: DrawFn) -> Taxonomy:
         # Draw a set of unique tag names for this node
         names = draw(
             lists(
-                from_regex(r"[a-zA-Z_][-_ a-zA-Z0-9]*", fullmatch=True),
+                from_regex(r"[a-zA-Z_][-_ a-zA-Z0-9]*", fullmatch=True)
+                # Filter out any existing names
+                .filter(lambda name, node=node: name_is_available(node, name)),
                 min_size=0,
-                max_size=3,
+                max_size=2,
                 unique_by=str.casefold,
             )
         )
-        for name in names:
-            child = node.add_tag(TagNode(name, node, None))
-            add_tag_children(child, depth - 1)
+        # First, create all children at this level...
+        children = [node.add_tag(TagNode(name, node, None)) for name in names]
 
-    def tag_not_found(node: ClassNode, name: str):
-        try:
-            node.find_tag(name)
-        except NodeNotFoundError:
-            return True
-        return False
+        # ...then recursively add children to each of them
+        for child in children:
+            add_tag_children(child, depth - 1)
 
     def add_class_children(node: ClassNode, depth):
         if depth <= 0:
@@ -53,15 +58,19 @@ def any_taxonomy(draw: DrawFn) -> Taxonomy:
         names = draw(
             lists(
                 from_regex(r"[a-zA-Z_][-_ a-zA-Z0-9]*", fullmatch=True)
-                # Filter out any names that are already available as tags for this node
-                .filter(lambda name: tag_not_found(node, name)),
+                # Filter out any existing names
+                .filter(lambda name, node=node: name_is_available(node, name)),
                 min_size=0,
-                max_size=3,
+                max_size=2,
                 unique_by=str.casefold,
             )
         )
-        for name in names:
-            child = node.add_class(ClassNode(name, node, None))
+
+        # First, create all children at this level...
+        children = [node.add_class(ClassNode(name, node, None)) for name in names]
+
+        # ...then recursively add children to each of them
+        for child in children:
             add_tag_children(child, depth - 1)
             add_class_children(child, depth - 1)
 

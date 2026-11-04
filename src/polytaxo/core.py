@@ -112,6 +112,36 @@ class BaseNode:
 
         return tuple(_(self))[::-1]
 
+    def walk(
+        self, include_self: bool = True, classes=True, tags=True, virtuals=False
+    ) -> Iterator["BaseNode"]:
+        """Yield all real nodes in the subtree rooted at this node.
+
+        Args:
+            include_self (bool): Whether to include this node in the iteration.
+            classes (bool): Whether to include ClassNode instances.
+            tags (bool): Whether to include TagNode instances.
+            virtuals (bool): Whether to include VirtualNode instances.
+        """
+        if include_self:
+            yield self
+
+        if classes and isinstance(self, ClassNode):
+            for node in self.classes:
+                yield from node.walk(
+                    include_self=True, classes=True, tags=tags, virtuals=virtuals
+                )
+
+        if tags and isinstance(self, (ClassNode, TagNode)):
+            for node in self.tags:
+                yield from node.walk(
+                    include_self=True, classes=classes, tags=True, virtuals=virtuals
+                )
+
+        if virtuals and isinstance(self, ClassNode):
+            for node in self.virtuals:
+                yield node
+
     @property
     def siblings(self):
         """Return a tuple of sibling nodes (with the same type as self)."""
@@ -282,16 +312,66 @@ class RealNode(BaseNode, CoreDescriptor):
     def real_children(self) -> List["RealNode"]:
         raise NotImplementedError()
 
-    def walk(self) -> Iterator["RealNode"]:
-        """Walk through the node and its children."""
-        yield self
-        for child in self.real_children:
-            yield from child.walk()
-
     def negate(self, negate: bool = True) -> Descriptor:
         if negate:
             return NegatedRealNode(self)
         return self
+
+    def _validate_child_name(self, name: str) -> None:
+        """Validate that a child name does not conflict with the existing tree."""
+        if not name:
+            raise ValueError("Child name cannot be empty")
+
+        # Check that child name does not shadow any existing class, tag, or virtual name in self or any of the ancestors.
+        for ancestor in self.lineage:
+            if isinstance(ancestor, ClassNode):
+                for node in itertools.chain((ancestor,), ancestor.classes):
+                    if node._matches_name(
+                        name, has_active_parent=False, with_alias=False
+                    ):
+                        raise ValueError(
+                            f"Cannot add {name!r} to {self}: "
+                            f"A node with the same name already exists in {node}."
+                        )
+
+        if isinstance(self, ClassNode) and list(
+            self._find_all_virtual((name,), with_alias=False)
+        ):
+            raise ValueError(
+                f"Cannot add {name!r} to {self}: "
+                f"A virtual node with the same name already exists in {self}."
+            )
+
+        if isinstance(self, (ClassNode, TagNode)) and list(
+            self._find_all_tag((name,), with_alias=False)
+        ):
+            raise ValueError(
+                f"Cannot add {name!r} to {self}: "
+                f"A tag node with the same name already exists in {self}."
+            )
+
+        for descendant in self.walk(
+            include_self=False, classes=True, tags=True, virtuals=True
+        ):
+            if descendant._matches_name(
+                name, has_active_parent=False, with_alias=False
+            ):
+                raise ValueError(
+                    f"Cannot add {name!r} to {self}: "
+                    f"A node with the same name already exists in descendant {descendant}."
+                )
+
+    def _validate_child(self, child: BaseNode) -> None:
+        """Validate that a child node can be attached to this node."""
+
+        if child.parent is not self:
+            raise ValueError(
+                f"Cannot add {child} to {self}: "
+                f"Expected child.parent to be {self}, got {child.parent}."
+            )
+
+        # Make sure that the child name does not conflict with the existing tree.
+        self._validate_child_name(child.name)
 
 
 TRealNode = TypeVar("TRealNode", bound=RealNode)
@@ -409,6 +489,7 @@ class TagNode(RealNode):
 
     def add_tag(self, tag: "TagNode"):
         """Add a child TagNode."""
+        self._validate_child(tag)
         self.tags.append(tag)
         return tag
 
@@ -556,6 +637,9 @@ class VirtualNode(BaseNode):
     def __repr__(self):
         return f"<{self.__class__.__name__} {self.format_tree()}>"
 
+    def __str__(self) -> str:
+        return self.format()
+
 
 class ClassNode(RealNode):
     """
@@ -649,19 +733,22 @@ class ClassNode(RealNode):
 
     def add_class(self, subclass: "ClassNode"):
         """Add a subclass."""
-        # TODO: Make sure that the new node does not shadow an existing one
+
+        self._validate_child(subclass)
         self.classes.append(subclass)
         return subclass
 
     def add_tag(self, tag: TagNode):
         """Add a tag."""
-        # TODO: Make sure that the new node does not shadow an existing one
+
+        self._validate_child(tag)
         self.tags.append(tag)
         return tag
 
     def add_virtual(self, node: VirtualNode):
         """Add a VirtualNode."""
-        # TODO: Make sure that the new node does not shadow an existing one
+
+        self._validate_child(node)
         self.virtuals.append(node)
         return node
 
