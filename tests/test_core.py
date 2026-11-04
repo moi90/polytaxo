@@ -124,3 +124,36 @@ def test_direct_child_anchored_tag_alias_matches_from_active_anchor():
 
 
 # NB: Virtuals don't have aliases
+
+
+def test_add_class_does_not_shadow_existing_class():
+    """Test that adding a class with the same name as an existing class in an ancestor raises an error.
+
+    This is allowed (because ):
+    ...
+    └── A
+        └── X
+    └── B
+        └── X
+
+    This is not allowed (because it would be unclear if "X" refers to .../X or .../A/X):
+    ...
+    └── X
+    └── A
+        └── X
+    """
+    root = ClassNode("", None, None)
+    A = root.add_class(ClassNode("A", root, None))
+    B = A.add_class(ClassNode("B", A, None))
+
+    # A/X, then A/B/X
+    A.add_class(ClassNode("X", A, None))
+
+    with pytest.raises(ValueError):
+        B.add_class(ClassNode("X", B, None))
+
+    # A/B/X, then A/X
+    B.add_class(ClassNode("Y", B, None))
+
+    with pytest.raises(ValueError):
+        A.add_class(ClassNode("Y", A, None))
