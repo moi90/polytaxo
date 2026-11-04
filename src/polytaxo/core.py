@@ -112,6 +112,36 @@ class BaseNode:
 
         return tuple(_(self))[::-1]
 
+    def walk(
+        self, include_self: bool = True, classes=True, tags=True, virtuals=False
+    ) -> Iterator["BaseNode"]:
+        """Yield all real nodes in the subtree rooted at this node.
+
+        Args:
+            include_self (bool): Whether to include this node in the iteration.
+            classes (bool): Whether to include ClassNode instances.
+            tags (bool): Whether to include TagNode instances.
+            virtuals (bool): Whether to include VirtualNode instances.
+        """
+        if include_self:
+            yield self
+
+        if classes and isinstance(self, ClassNode):
+            for node in self.classes:
+                yield from node.walk(
+                    include_self=True, classes=True, tags=tags, virtuals=virtuals
+                )
+
+        if tags and isinstance(self, (ClassNode, TagNode)):
+            for node in self.tags:
+                yield from node.walk(
+                    include_self=True, classes=classes, tags=True, virtuals=virtuals
+                )
+
+        if virtuals and isinstance(self, ClassNode):
+            for node in self.virtuals:
+                yield node
+
     @property
     def siblings(self):
         """Return a tuple of sibling nodes (with the same type as self)."""
@@ -281,18 +311,6 @@ class RealNode(BaseNode, CoreDescriptor):
     @property
     def real_children(self) -> List["RealNode"]:
         raise NotImplementedError()
-
-    def walk(self, include_self: bool = True) -> Iterator["RealNode"]:
-        """Yield all real nodes in the subtree rooted at this node.
-
-        Args:
-            include_self (bool): Whether to include this node in the iteration.
-        """
-        if include_self:
-            yield self
-
-        for child in self.real_children:
-            yield from child.walk()
 
     def negate(self, negate: bool = True) -> Descriptor:
         if negate:
