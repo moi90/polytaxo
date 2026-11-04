@@ -435,6 +435,7 @@ class TagNode(RealNode):
     def add_tag(self, tag: "TagNode"):
         """Add a child TagNode."""
         self._check_child_parent(tag)
+        self._check_name_is_available(tag.name)
         self.tags.append(tag)
         return tag
 

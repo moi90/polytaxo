@@ -1,4 +1,4 @@
-from polytaxo.core import ClassNode, NodeNotFoundError
+from polytaxo.core import ClassNode, NodeNotFoundError, TagNode
 import pytest
 
 
@@ -121,6 +121,16 @@ def test_direct_child_anchored_tag_alias_matches_from_active_anchor():
     view = root.find_tag("view")
     lefty = view.find_tag("lefty", with_alias=True)
     assert lefty.name == "other"
+
+
+def test_add_tag_rejects_case_insensitive_duplicate_sibling_name():
+    root = ClassNode.from_dict("Root", {"tags": {"group": {}}})
+    group = root.find_tag("group")
+
+    group.add_tag(TagNode("X", group, None))
+
+    with pytest.raises(ValueError, match="same name already exists"):
+        group.add_tag(TagNode("x", group, None))
 
 
 # NB: Virtuals don't have aliases
