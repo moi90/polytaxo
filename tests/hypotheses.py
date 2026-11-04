@@ -7,7 +7,7 @@ from hypothesis.strategies import (
     sampled_from,
     from_regex,
 )
-from polytaxo.core import ClassNode, Description, NodeNotFoundError, TagNode
+from polytaxo.core import ClassNode, Description, TagNode
 from polytaxo.taxonomy import Expression, Taxonomy
 from tests.helpers import format_description, format_expression
 
@@ -21,12 +21,12 @@ def any_taxonomy(draw: DrawFn) -> Taxonomy:
     # Create a root node
     root = ClassNode("", None, None)
 
-    def name_is_available(node: ClassNode | TagNode, name: str):
+    def name_is_available(node: ClassNode | TagNode, child_name: str):
         try:
-            node._check_name_is_available(name)
+            node._validate_child_name(child_name)
+            return True
         except ValueError:
             return False
-        return True
 
     def add_tag_children(node: ClassNode | TagNode, depth):
         if depth <= 0:

@@ -1,4 +1,10 @@
-from polytaxo.core import ClassNode, NodeNotFoundError, TagNode
+from polytaxo.core import (
+    ClassNode,
+    Description,
+    NodeNotFoundError,
+    TagNode,
+    VirtualNode,
+)
 import pytest
 
 
@@ -136,10 +142,10 @@ def test_add_tag_rejects_case_insensitive_duplicate_sibling_name():
 # NB: Virtuals don't have aliases
 
 
-def test_add_class_does_not_shadow_existing_class():
+def test_add_class_does_not_shadow_existing_class(subtests: pytest.Subtests):
     """Test that adding a class with the same name as an existing class in an ancestor raises an error.
 
-    This is allowed (because both Xs can be unambiguously referred to):
+    This is allowed (because both Xs can be unambiguously referred to using A/X and B/X):
     ...
     └── A
         └── X
@@ -151,32 +157,38 @@ def test_add_class_does_not_shadow_existing_class():
     └── X
     └── A
         └── X
+
+    This is not allowed (because it would be unclear if "X" refers to .../X or .../X/X):
+    ...
+    └── X
+        └── X
     """
     root = ClassNode("", None, None)
     A = root.add_class(ClassNode("A", root, None))
     B = A.add_class(ClassNode("B", A, None))
 
-    X = A.add_class(ClassNode("X", A, None))
+    A.add_class(ClassNode("X", A, None))
 
-    # A/X, then A/B/X
-    with pytest.raises(ValueError):
-        B.add_class(ClassNode("X", B, None))
+    with subtests.test("A/X => A/B/X"):
+        with pytest.raises(ValueError):
+            B.add_class(ClassNode("X", B, None))
 
-    # Try to add X a second time to A
-    with pytest.raises(ValueError):
-        X.add_class(ClassNode("X", X, None))
-
-    # A/B/X, then A/X
     B.add_class(ClassNode("Y", B, None))
 
-    with pytest.raises(ValueError):
-        A.add_class(ClassNode("Y", A, None))
+    with subtests.test("A/B/Y => A/Y"):
+        with pytest.raises(ValueError):
+            A.add_class(ClassNode("Y", A, None))
+
+    Z = A.add_class(ClassNode("Z", A, None))
+    with subtests.test("A/Z/Z"):
+        with pytest.raises(ValueError):
+            Z.add_class(ClassNode("Z", Z, None))
 
 
 def test_from_dict_does_not_shadow_existing_class():
     """Nested deserialization should not bypass ancestor-name shadowing checks."""
 
-    with pytest.raises(ValueError, match="same name already exists in ancestor"):
+    with pytest.raises(ValueError, match="Cannot add 'X' to /B"):
         ClassNode.from_dict(
             "",
             {
@@ -191,7 +203,7 @@ def test_from_dict_does_not_shadow_existing_class():
             },
         )
 
-    with pytest.raises(ValueError, match="same name already exists in ancestor"):
+    with pytest.raises(ValueError, match="Cannot add 'X' to /X"):
         ClassNode.from_dict(
             "",
             {
@@ -204,3 +216,25 @@ def test_from_dict_does_not_shadow_existing_class():
                 }
             },
         )
+
+
+def test_add_virtual_rejects_ancestor_name_conflict_with_descendant_virtuals(
+    subtests: pytest.Subtests,
+):
+    """Ancestor virtual names must not conflict with descendant class virtuals."""
+
+    root = ClassNode("", None, None)
+    A = root.add_class(ClassNode("A", root, None))
+    B = A.add_class(ClassNode("B", A, None))
+
+    with subtests.test("A/B/X => A/X"):
+        # Add the descendant-owned virtual first, then try to add the same name upstream.
+        B.add_virtual(VirtualNode("x", B, Description(B)))
+        with pytest.raises(ValueError, match="Cannot add 'x' to /A"):
+            A.add_virtual(VirtualNode("x", A, Description(A)))
+
+    with subtests.test("A/X => A/B/X"):
+        # Add the ancestor-owned virtual first, then try to add the same name downstream.
+        A.add_virtual(VirtualNode("y", A, Description(A)))
+        with pytest.raises(ValueError, match="Cannot add 'y' to /A/B"):
+            B.add_virtual(VirtualNode("y", B, Description(B)))

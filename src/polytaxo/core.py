@@ -317,13 +317,61 @@ class RealNode(BaseNode, CoreDescriptor):
             return NegatedRealNode(self)
         return self
 
-    def _check_child_parent(self, child: BaseNode) -> None:
-        """Validate that a child node is attached to this node."""
+    def _validate_child_name(self, name: str) -> None:
+        """Validate that a child name does not conflict with the existing tree."""
+        if not name:
+            raise ValueError("Child name cannot be empty")
+
+        # Check that child name does not shadow any existing class, tag, or virtual name in self or any of the ancestors.
+        for ancestor in self.lineage:
+            if isinstance(ancestor, ClassNode):
+                for node in itertools.chain((ancestor,), ancestor.classes):
+                    if node._matches_name(
+                        name, has_active_parent=False, with_alias=False
+                    ):
+                        raise ValueError(
+                            f"Cannot add {name!r} to {self}: "
+                            f"A node with the same name already exists in {node}."
+                        )
+
+        if isinstance(self, ClassNode) and list(
+            self._find_all_virtual((name,), with_alias=False)
+        ):
+            raise ValueError(
+                f"Cannot add {name!r} to {self}: "
+                f"A virtual node with the same name already exists in {self}."
+            )
+
+        if isinstance(self, (ClassNode, TagNode)) and list(
+            self._find_all_tag((name,), with_alias=False)
+        ):
+            raise ValueError(
+                f"Cannot add {name!r} to {self}: "
+                f"A tag node with the same name already exists in {self}."
+            )
+
+        for descendant in self.walk(
+            include_self=False, classes=True, tags=True, virtuals=True
+        ):
+            if descendant._matches_name(
+                name, has_active_parent=False, with_alias=False
+            ):
+                raise ValueError(
+                    f"Cannot add {name!r} to {self}: "
+                    f"A node with the same name already exists in descendant {descendant}."
+                )
+
+    def _validate_child(self, child: BaseNode) -> None:
+        """Validate that a child node can be attached to this node."""
+
         if child.parent is not self:
             raise ValueError(
                 f"Cannot add {child} to {self}: "
                 f"Expected child.parent to be {self}, got {child.parent}."
             )
+
+        # Make sure that the child name does not conflict with the existing tree.
+        self._validate_child_name(child.name)
 
 
 TRealNode = TypeVar("TRealNode", bound=RealNode)
@@ -439,21 +487,9 @@ class TagNode(RealNode):
 
         return d
 
-    def _check_name_is_available(self, name: str) -> None:
-        """Check if a name is available for a new child node of `self`."""
-
-        # Make sure that the new node does not shadow an existing tag in `self`
-        for tag in self.tags:
-            if tag._matches_name(name, has_active_parent=False, with_alias=False):
-                raise ValueError(
-                    f"Cannot add tag {name!r} to {self}: "
-                    f"A tag node with the same name already exists."
-                )
-
     def add_tag(self, tag: "TagNode"):
         """Add a child TagNode."""
-        self._check_child_parent(tag)
-        self._check_name_is_available(tag.name)
+        self._validate_child(tag)
         self.tags.append(tag)
         return tag
 
@@ -601,6 +637,9 @@ class VirtualNode(BaseNode):
     def __repr__(self):
         return f"<{self.__class__.__name__} {self.format_tree()}>"
 
+    def __str__(self) -> str:
+        return self.format()
+
 
 class ClassNode(RealNode):
     """
@@ -692,70 +731,24 @@ class ClassNode(RealNode):
     def real_children(self):
         return self.classes + self.tags
 
-    def _check_name_is_available(self, name: str) -> None:
-        """Check if a name is available for a new child node of `self`."""
-
-        # Make sure that the new node does not shadow an existing
-        # class, tag or virtual name in `self` or any of the ancestors.
-        for node in self.lineage:
-            assert isinstance(node, ClassNode)
-
-            for class_ in itertools.chain((node,), node.classes):
-                if class_._matches_name(
-                    name, has_active_parent=False, with_alias=False
-                ):
-                    raise ValueError(
-                        f"Cannot add class {name!r} to {self}: "
-                        f"A class node with the same name already exists in ancestor {node}."
-                    )
-
-            # TODO: At some point, we might allow tags to shadow existing tags if the new tag "implies" the existing tag.
-            for tag in node.tags:
-                if tag._matches_name(name, has_active_parent=False, with_alias=False):
-                    raise ValueError(
-                        f"Cannot add class {name!r} to {self}: "
-                        f"A tag node with the same name already exists in ancestor {node}."
-                    )
-
-            for virtual in node.virtuals:
-                if virtual._matches_name(
-                    name, has_active_parent=False, with_alias=False
-                ):
-                    raise ValueError(
-                        f"Cannot add class {name!r} to {self}: "
-                        f"A virtual node with the same name already exists in ancestor {node}."
-                    )
-
-            for descendant in node.walk(include_self=False):
-                if descendant._matches_name(
-                    name, has_active_parent=False, with_alias=False
-                ):
-                    raise ValueError(
-                        f"Cannot add class {name!r} to {self}: "
-                        f"A descendant node with the same name already exists: {descendant}"
-                    )
-
     def add_class(self, subclass: "ClassNode"):
         """Add a subclass."""
 
-        self._check_child_parent(subclass)
-        self._check_name_is_available(subclass.name)
+        self._validate_child(subclass)
         self.classes.append(subclass)
         return subclass
 
     def add_tag(self, tag: TagNode):
         """Add a tag."""
 
-        self._check_child_parent(tag)
-        self._check_name_is_available(tag.name)
+        self._validate_child(tag)
         self.tags.append(tag)
         return tag
 
     def add_virtual(self, node: VirtualNode):
         """Add a VirtualNode."""
 
-        self._check_child_parent(node)
-        self._check_name_is_available(node.name)
+        self._validate_child(node)
         self.virtuals.append(node)
         return node
 
