@@ -19,4 +19,4 @@ polytaxo = { workspace = true }
 polytaxo_gui = { workspace = true }
 
 [tool.pytest.ini_options]
-addopts = "--cov=polytaxo --cov-report xml"
+addopts = "--cov=polytaxo --cov=polytaxo_gui --cov-report xml"
