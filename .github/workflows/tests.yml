@@ -45,7 +45,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --group dev
-      - run: uv run --frozen --group dev pytest lib/tests
+      # TODO: Add coverage format (e.g. --cov-report xml) once coverage reporting is set up.
+      - run: uv run --frozen --group dev pytest -o addopts= --cov=polytaxo lib/tests
 
   gui-tests:
     needs: changes
@@ -59,4 +60,5 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --group dev
-      - run: uv run --frozen --group dev pytest -o addopts= gui/tests
+      # TODO: Add coverage format (e.g. --cov-report xml) once coverage reporting is set up.
+      - run: uv run --frozen --group dev pytest -o addopts= --cov=polytaxo_gui gui/tests
