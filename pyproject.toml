@@ -9,6 +9,8 @@ dev = [
     "pytest",
     "pytest-cov",
     "pyright",
+    "selenium",
+    "pytest-selenium>=4.1.0",
 ]
 docs = [
     "sphinx>=1.4",
